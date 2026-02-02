@@ -1,22 +1,26 @@
-# OpenClaw Docker deploy to ts-ubuntu-server
+# OpenClaw Docker deploy
 
 Deploys [OpenClaw](https://github.com/openclaw/openclaw) on your Ubuntu server using Docker.
 
 **Coding (Claude, Gemini, ChatGPT):** See [CODING.md](CODING.md) for how OpenClaw helps with coding and how to use command-line tools (Claude Code CLI, Gemini CLI) with your subscriptions, plus skills in `deploy/skills/`.
 
+**Registry + Watchtower (auto-update):** See [REGISTRY-AND-WATCHTOWER.md](REGISTRY-AND-WATCHTOWER.md) and run `.\deploy-with-registry.ps1` to build from your fork, push to ghcr.io, and let Watchtower update the gateway.
+
 ## Prerequisites
 
-- **Server:** `ts-ubuntu-server` reachable via SSH
-- **Windows:** SSH key at `C:\Utils\id_rsa`
+- **Server:** Your Ubuntu server reachable via SSH
+- **Windows:** SSH key
 - **Server:** Docker and Docker Compose installed ([install Docker](https://docs.docker.com/engine/install/ubuntu/))
+
+**Sensitive config:** Copy `deploy/.env.example` to `deploy/.env` (`.env` is gitignored) and set at least `OPENCLAW_SERVER`, `OPENCLAW_DEPLOY_USER`, and `OPENCLAW_KEY_PATH`. The deploy scripts load `.env` automatically so you don’t leak hostnames or tokens in the repo.
 
 ## Before you deploy (quick checks)
 
 1. **SSH works** from your machine:
    ```powershell
-   ssh -i C:\Utils\id_rsa ts-ubuntu-server "echo OK"
+   ssh -i YOUR_KEY_PATH YOUR_USER@YOUR_SERVER "echo OK"
    ```
-   The deploy script uses user **lance** by default. To test: `ssh -i C:\Utils\id_rsa lance@ts-ubuntu-server "echo OK"`. To use another user, set `$env:OPENCLAW_DEPLOY_USER` before deploying.
+   Set `$env:OPENCLAW_SERVER` and `$env:OPENCLAW_DEPLOY_USER` (and key path in the script if needed) so deploy uses your server and user.
 
 2. **Docker on the server** — if not installed:
    ```bash
@@ -30,7 +34,7 @@ Deploys [OpenClaw](https://github.com/openclaw/openclaw) on your Ubuntu server u
    ```
    You can deploy without Ollama; Z.AI will work on its own.
 
-No other config is required. The script uses your Z.AI key from `deploy.ps1` and generates the gateway token on the server.
+No other config is required. Set `ZAI_API_KEY` in `deploy/.env` if you want the Z.AI (GLM) model; the script generates the gateway token on the server.
 
 ## Deploy
 
@@ -41,7 +45,7 @@ cd deploy
 .\deploy.ps1
 ```
 
-The script uses SSH user **lance** by default (`lance@ts-ubuntu-server`). To use a different user:
+The script uses `$env:OPENCLAW_DEPLOY_USER` and `$env:OPENCLAW_SERVER` if set. To use a different user or server:
 
 ```powershell
 $env:OPENCLAW_DEPLOY_USER = "ubuntu"
@@ -50,7 +54,7 @@ $env:OPENCLAW_DEPLOY_USER = "ubuntu"
 
 The script will:
 
-1. SSH to `ts-ubuntu-server` with `C:\Utils\id_rsa`
+1. SSH to your server with your key (from `deploy/.env`)
 2. Clone the OpenClaw repo (or pull if already cloned)
 3. Generate a gateway token and write `.env`
 4. Build the Docker image (can take several minutes)
@@ -67,7 +71,7 @@ $env:ZAI_API_KEY = "your-key"   # or leave unset to skip Z.AI
 .\deploy.ps1
 ```
 
-For production, consider removing the default key from `deploy.ps1` and always setting `$env:ZAI_API_KEY` when needed.
+Set `ZAI_API_KEY` in `deploy/.env` (or leave unset to skip Z.AI).
 
 ### Ollama (local on server)
 
@@ -84,7 +88,7 @@ Ensure Ollama is listening on `0.0.0.0:11434` (or that the Docker host gateway c
 - **Onboarding (model, channels):** SSH in and run  
   `cd ~/openclaw && docker compose run --rm openclaw-cli onboard --no-install-daemon`
 - **Logs:**  
-  `ssh -i C:\Utils\id_rsa ts-ubuntu-server "cd ~/openclaw && docker compose logs -f openclaw-gateway"`
+  `ssh -i YOUR_KEY YOUR_USER@YOUR_SERVER "cd ~/openclaw && docker compose logs -f openclaw-gateway"`
 - **Web UI:** From another machine, open `http://<server-ip>:18789` and use the token when prompted.
 
 ### Watchtower (auto-update)
@@ -141,13 +145,13 @@ cd deploy
 sudo tailscale serve https / http://127.0.0.1:18789
 ```
 
-Tailscale will serve the UI at your machine’s **Tailscale name** (e.g. `https://ts-ubuntu-server`) or its MagicDNS name (e.g. `https://ts-ubuntu-server.your-tailnet.ts.net`).
+Tailscale will serve the UI at your machine’s **Tailscale name** (e.g. `https://your-machine`) or its MagicDNS name (e.g. `https://your-machine.your-tailnet.ts.net`).
 
 ### 3. Open the Control UI
 
 From any device on your Tailnet (signed into Tailscale):
 
-- Open: **`https://ts-ubuntu-server`** (or `https://ts-ubuntu-server.your-tailnet.ts.net`).
+- Open: **`https://YOUR_TAILSCALE_NAME`** (or your MagicDNS URL).
 - Use the **gateway token** when the UI asks for it.
 
 Only Tailnet devices can reach this URL; the rest of the internet cannot.

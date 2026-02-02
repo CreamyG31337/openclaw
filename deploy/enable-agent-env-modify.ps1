@@ -3,9 +3,13 @@
 # Runs enable-agent-env-modify.py on the server and restarts the gateway.
 
 $ErrorActionPreference = "Stop"
-$Server = "ts-ubuntu-server"
-$KeyPath = "C:\Utils\id_rsa"
-$User = if ($env:OPENCLAW_DEPLOY_USER) { $env:OPENCLAW_DEPLOY_USER } else { "lance" }
+$Server = if ($env:OPENCLAW_SERVER) { $env:OPENCLAW_SERVER } else { "your-server" }
+$KeyPath = if ($env:OPENCLAW_KEY_PATH) { $env:OPENCLAW_KEY_PATH } else { "" }
+$User = if ($env:OPENCLAW_DEPLOY_USER) { $env:OPENCLAW_DEPLOY_USER } else { "deploy" }
+if (-not $KeyPath -or $Server -eq "your-server") {
+  Write-Error "Set OPENCLAW_SERVER and OPENCLAW_KEY_PATH in deploy\.env (copy from .env.example)."
+  exit 1
+}
 $Target = "$User@$Server"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PyScript = Join-Path $ScriptDir "enable-agent-env-modify.py"

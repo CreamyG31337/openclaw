@@ -1,12 +1,16 @@
-# Enable Tailscale Serve for OpenClaw Control UI on ts-ubuntu-server
+# Enable Tailscale Serve for OpenClaw Control UI on your server
 # Usage: .\enable-tailscale-serve.ps1
 # Requires: Tailscale installed and logged in on the server; OpenClaw gateway running (port 18789).
 # Note: You may be prompted for your sudo password on the server.
 
 $ErrorActionPreference = "Stop"
-$Server = "ts-ubuntu-server"
-$KeyPath = "C:\Utils\id_rsa"
-$User = if ($env:OPENCLAW_DEPLOY_USER) { $env:OPENCLAW_DEPLOY_USER } else { "lance" }
+$Server = if ($env:OPENCLAW_SERVER) { $env:OPENCLAW_SERVER } else { "your-server" }
+$KeyPath = if ($env:OPENCLAW_KEY_PATH) { $env:OPENCLAW_KEY_PATH } else { "" }
+$User = if ($env:OPENCLAW_DEPLOY_USER) { $env:OPENCLAW_DEPLOY_USER } else { "deploy" }
+if (-not $KeyPath -or $Server -eq "your-server") {
+  Write-Error "Set OPENCLAW_SERVER and OPENCLAW_KEY_PATH in deploy\.env (copy from .env.example)."
+  exit 1
+}
 $Target = "$User@$Server"
 
 if (-not (Test-Path $KeyPath)) {

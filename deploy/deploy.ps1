@@ -1,23 +1,36 @@
-# Deploy OpenClaw to ts-ubuntu-server via Docker (SSH + remote-setup.sh)
+# Deploy OpenClaw to your server via Docker (SSH + remote-setup.sh)
 # Usage: .\deploy.ps1   or   pwsh -File deploy.ps1
-# To use Z.AI (GLM): set $env:ZAI_API_KEY before running, or it uses the default below.
+# Sensitive config: copy .env.example to .env (gitignored) and fill in; scripts load it automatically.
 
 $ErrorActionPreference = "Stop"
-$Server = "ts-ubuntu-server"
-$KeyPath = "C:\Utils\id_rsa"
-
-# Z.AI API key — used as default if $env:ZAI_API_KEY is not set. Override or clear for production.
-if (-not $env:ZAI_API_KEY) {
-  $env:ZAI_API_KEY = "9778eb4ca4da4bac8a6099cee15fbc02.ASXTVlCUr0IdZuCP"
+$DeployDir = $PSScriptRoot
+# Load .env if present (KEY=value or KEY="value"; comments and empty lines skipped)
+if (Test-Path (Join-Path $DeployDir ".env")) {
+  Get-Content (Join-Path $DeployDir ".env") | ForEach-Object {
+    $line = $_.Trim()
+    if ($line -and $line -notmatch '^\s*#') {
+      $i = $line.IndexOf('=')
+      if ($i -gt 0) {
+        $k = $line.Substring(0, $i).Trim()
+        $v = $line.Substring($i + 1).Trim().Trim('"').Trim("'")
+        if ($k) { [Environment]::SetEnvironmentVariable($k, $v, 'Process') }
+      }
+    }
+  }
 }
+$Server = if ($env:OPENCLAW_SERVER) { $env:OPENCLAW_SERVER } else { "your-server" }
+$KeyPath = if ($env:OPENCLAW_KEY_PATH) { $env:OPENCLAW_KEY_PATH } else { "" }
 
-# SSH user on the server (default: lance). Override with $env:OPENCLAW_DEPLOY_USER if needed.
-$User = if ($env:OPENCLAW_DEPLOY_USER) { $env:OPENCLAW_DEPLOY_USER } else { "lance" }
+# SSH user on the server (default: deploy). Override with $env:OPENCLAW_DEPLOY_USER if needed.
+$User = if ($env:OPENCLAW_DEPLOY_USER) { $env:OPENCLAW_DEPLOY_USER } else { "deploy" }
 $Target = "$User@$Server"
 
-$DeployDir = $PSScriptRoot
 $RemoteScript = Join-Path $DeployDir "remote-setup.sh"
 
+if (-not $KeyPath -or $Server -eq "your-server") {
+  Write-Error "Set OPENCLAW_SERVER and OPENCLAW_KEY_PATH in deploy\.env (copy from .env.example)."
+  exit 1
+}
 if (-not (Test-Path $KeyPath)) {
   Write-Error "SSH key not found: $KeyPath"
   exit 1
@@ -29,6 +42,7 @@ if (-not (Test-Path $RemoteScript)) {
 
 Write-Host "==> Deploying OpenClaw to $Target (key: $KeyPath)" -ForegroundColor Cyan
 if ($env:ZAI_API_KEY) { Write-Host "==> Z.AI API key will be configured (default model: zai/glm-4.7)" -ForegroundColor Cyan }
+if ($env:OPENAI_API_KEY) { Write-Host "==> OpenAI API key will be configured (Codex CLI headless)" -ForegroundColor Cyan }
 if ($env:OPENCLAW_REGISTRY_IMAGE) {
   if ($env:OPENCLAW_REGISTRY_USER) { Write-Host "==> Build, push to $($env:OPENCLAW_REGISTRY_IMAGE); gateway runs from registry" -ForegroundColor Cyan }
   else { Write-Host "==> Pull $($env:OPENCLAW_REGISTRY_IMAGE) (no build); gateway runs from registry; Watchtower can update" -ForegroundColor Cyan }
@@ -47,6 +61,8 @@ if ($env:OPENCLAW_REGISTRY_USER) { $RemoteEnv += "export OPENCLAW_REGISTRY_USER=
 if ($env:OPENCLAW_REGISTRY_PASSWORD) { $RemoteEnv += "export OPENCLAW_REGISTRY_PASSWORD='$($env:OPENCLAW_REGISTRY_PASSWORD)'; " }
 if ($env:OPENCLAW_REPO) { $RemoteEnv += "export OPENCLAW_REPO='$($env:OPENCLAW_REPO)'; " }
 if ($env:OPENCLAW_REPO_BRANCH) { $RemoteEnv += "export OPENCLAW_REPO_BRANCH='$($env:OPENCLAW_REPO_BRANCH)'; " }
+if ($env:OPENAI_API_KEY) { $RemoteEnv += "export OPENAI_API_KEY='$($env:OPENAI_API_KEY)'; " }
+if ($env:OPENROUTER_API_KEY) { $RemoteEnv += "export OPENROUTER_API_KEY='$($env:OPENROUTER_API_KEY)'; " }
 # Copy script to server and run (avoids stdin issues with PowerShell). Use LF only; strip any CR so bash never sees $'\r': command not found.
 $ScriptContent = (Get-Content -Path $RemoteScript -Raw) -replace "`r`n", "`n" -replace "`r", ""
 $ScriptContent | ssh -i $KeyPath -o StrictHostKeyChecking=accept-new $Target "${RemoteEnv}cat > /tmp/openclaw-remote-setup.sh && chmod +x /tmp/openclaw-remote-setup.sh && bash /tmp/openclaw-remote-setup.sh"

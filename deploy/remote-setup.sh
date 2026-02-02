@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenClaw Docker setup — run this on ts-ubuntu-server (Ubuntu with Docker)
+# OpenClaw Docker setup — run this on your Ubuntu server (with Docker)
 set -eu
 
 OPENCLAW_REPO="${OPENCLAW_REPO:-https://github.com/openclaw/openclaw.git}"
@@ -30,11 +30,14 @@ if [ "$USE_DOCKER_RUN" = 0 ]; then
 fi
 
 echo "==> Creating config dirs..."
-mkdir -p "$OPENCLAW_CONFIG_DIR" "$OPENCLAW_WORKSPACE_DIR" "$OPENCLAW_CONFIG_DIR/cli-auth/claude" "$OPENCLAW_CONFIG_DIR/cli-auth/gemini"
+mkdir -p "$OPENCLAW_CONFIG_DIR" "$OPENCLAW_WORKSPACE_DIR" "$OPENCLAW_CONFIG_DIR/cli-auth/claude" "$OPENCLAW_CONFIG_DIR/cli-auth/gemini" "$OPENCLAW_CONFIG_DIR/cli-auth/codex"
 
 echo "==> Cloning OpenClaw..."
 if [[ -d "$OPENCLAW_DIR/.git" ]]; then
-  (cd "$OPENCLAW_DIR" && git fetch --all && git pull ${OPENCLAW_REPO_BRANCH:+origin "$OPENCLAW_REPO_BRANCH"})
+  (cd "$OPENCLAW_DIR" && \
+    if [[ -n "$OPENCLAW_REPO" ]]; then git remote set-url origin "$OPENCLAW_REPO"; fi && \
+    git fetch --all && \
+    if [[ -n "$OPENCLAW_REPO_BRANCH" ]]; then git reset --hard "origin/$OPENCLAW_REPO_BRANCH" && git checkout -B "$OPENCLAW_REPO_BRANCH" "origin/$OPENCLAW_REPO_BRANCH"; else git reset --hard && git pull; fi)
 else
   if [[ -n "$OPENCLAW_REPO_BRANCH" ]]; then
     git clone -b "$OPENCLAW_REPO_BRANCH" "$OPENCLAW_REPO" "$OPENCLAW_DIR"
@@ -77,6 +80,9 @@ echo "==> Adding Docker override (Ollama on host + optional Z.AI)..."
 if [[ -n "${ZAI_API_KEY:-}" ]]; then
   printf 'ZAI_API_KEY=%s\n' "$ZAI_API_KEY" >> .env
 fi
+if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+  printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> .env
+fi
 cat > docker-compose.override.yml << OVERRIDE
 services:
   openclaw-gateway:
@@ -85,16 +91,21 @@ services:
     volumes:
       - \${OPENCLAW_CONFIG_DIR}/cli-auth/claude:/home/node/.claude
       - \${OPENCLAW_CONFIG_DIR}/cli-auth/gemini:/home/node/.gemini
+      - \${OPENCLAW_CONFIG_DIR}/cli-auth/codex:/home/node/.codex
 OVERRIDE
-if [[ -n "${ZAI_API_KEY:-}" ]]; then
+if [[ -n "${ZAI_API_KEY:-}" ]] || [[ -n "${OPENAI_API_KEY:-}" ]] || [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
   cat >> docker-compose.override.yml << 'OVERRIDE'
     environment:
       - ZAI_API_KEY=${ZAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
   openclaw-cli:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       - ZAI_API_KEY=${ZAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
 OVERRIDE
 else
   cat >> docker-compose.override.yml << 'OVERRIDE'
@@ -267,6 +278,43 @@ with open(p, "w") as f:
 PYEOF
 fi
 
+# Write pull-and-restart.sh early (before long build) so it exists even if deploy times out
+IMAGE_FOR_SCRIPT="${OPENCLAW_REGISTRY_IMAGE:-$OPENCLAW_IMAGE}"
+echo "==> Writing pull-and-restart.sh (run on server for immediate image pull + restart)..."
+if [ "$USE_DOCKER_RUN" = 1 ]; then
+  cat > "$OPENCLAW_DIR/pull-and-restart.sh" << PULLRESTART
+#!/usr/bin/env bash
+set -eu
+cd "$OPENCLAW_DIR"
+[ -f .env ] && set -a && . ./.env && set +a
+docker pull "\${OPENCLAW_IMAGE:?}"
+docker rm -f openclaw-gateway 2>/dev/null || true
+GATEWAY_ENV="-e HOME=/home/node -e TERM=xterm-256color -e OPENCLAW_GATEWAY_TOKEN=\$OPENCLAW_GATEWAY_TOKEN"
+[ -n "\${ZAI_API_KEY:-}" ] && GATEWAY_ENV="\$GATEWAY_ENV -e ZAI_API_KEY=\$ZAI_API_KEY"
+[ -n "\${OPENAI_API_KEY:-}" ] && GATEWAY_ENV="\$GATEWAY_ENV -e OPENAI_API_KEY=\$OPENAI_API_KEY"
+[ -n "\${OPENROUTER_API_KEY:-}" ] && GATEWAY_ENV="\$GATEWAY_ENV -e OPENROUTER_API_KEY=\$OPENROUTER_API_KEY"
+docker run -d --name openclaw-gateway --restart unless-stopped \\
+  -v "$OPENCLAW_CONFIG_DIR:/home/node/.openclaw" \\
+  -v "$OPENCLAW_WORKSPACE_DIR:/home/node/.openclaw/workspace" \\
+  -v "$OPENCLAW_CONFIG_DIR/cli-auth/claude:/home/node/.claude" \\
+  -v "$OPENCLAW_CONFIG_DIR/cli-auth/gemini:/home/node/.gemini" \\
+  -v "$OPENCLAW_CONFIG_DIR/cli-auth/codex:/home/node/.codex" \\
+  -p "\${OPENCLAW_GATEWAY_PORT:-18789}:18789" -p "\${OPENCLAW_BRIDGE_PORT:-18790}:18790" \\
+  --add-host host.docker.internal:host-gateway \\
+  \$GATEWAY_ENV \\
+  "\$OPENCLAW_IMAGE" node dist/index.js gateway --bind "\${OPENCLAW_GATEWAY_BIND:-lan}" --port 18789
+PULLRESTART
+else
+  cat > "$OPENCLAW_DIR/pull-and-restart.sh" << 'PULLRESTART'
+#!/usr/bin/env bash
+set -eu
+cd "$(dirname "$0")"
+docker compose pull openclaw-gateway
+docker compose up -d openclaw-gateway
+PULLRESTART
+fi
+chmod +x "$OPENCLAW_DIR/pull-and-restart.sh"
+
 # Use a registry image (pull only, no auth) so Watchtower can update; or build and optionally push
 GATEWAY_IMAGE="$OPENCLAW_IMAGE"
 if [ -n "${OPENCLAW_REGISTRY_IMAGE:-}" ] && [ -z "${OPENCLAW_REGISTRY_USER:-}" ]; then
@@ -296,9 +344,14 @@ if [ "$USE_DOCKER_RUN" = 1 ]; then
   docker rm -f openclaw-gateway 2>/dev/null || true
   GATEWAY_ENV="-e HOME=/home/node -e TERM=xterm-256color -e OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_GATEWAY_TOKEN"
   [ -n "${ZAI_API_KEY:-}" ] && GATEWAY_ENV="$GATEWAY_ENV -e ZAI_API_KEY=$ZAI_API_KEY"
+  [ -n "${OPENAI_API_KEY:-}" ] && GATEWAY_ENV="$GATEWAY_ENV -e OPENAI_API_KEY=$OPENAI_API_KEY"
+  [ -n "${OPENROUTER_API_KEY:-}" ] && GATEWAY_ENV="$GATEWAY_ENV -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY"
   docker run -d --name openclaw-gateway --restart unless-stopped \
     -v "$OPENCLAW_CONFIG_DIR:/home/node/.openclaw" \
     -v "$OPENCLAW_WORKSPACE_DIR:/home/node/.openclaw/workspace" \
+    -v "$OPENCLAW_CONFIG_DIR/cli-auth/claude:/home/node/.claude" \
+    -v "$OPENCLAW_CONFIG_DIR/cli-auth/gemini:/home/node/.gemini" \
+    -v "$OPENCLAW_CONFIG_DIR/cli-auth/codex:/home/node/.codex" \
     -p "${OPENCLAW_GATEWAY_PORT}:18789" -p "${OPENCLAW_BRIDGE_PORT}:18790" \
     --add-host host.docker.internal:host-gateway \
     $GATEWAY_ENV \
@@ -326,6 +379,7 @@ echo "     docker compose -f $OPENCLAW_DIR/docker-compose.yml logs -f openclaw-g
 echo "  3. From another machine, open: http://<this-server-ip>:$OPENCLAW_GATEWAY_PORT"
 echo ""
 echo "  4. Control UI over Tailscale (open this URL so the UI gets the token automatically):"
-echo "     https://ts-ubuntu-server.tail054be5.ts.net/?token=$OPENCLAW_GATEWAY_TOKEN"
-echo "     (Replace hostname if your machine has a different Tailscale name.)"
+echo "     https://YOUR_TAILSCALE_HOST/?token=$OPENCLAW_GATEWAY_TOKEN"
+echo "     (Replace YOUR_TAILSCALE_HOST with your machine's Tailscale name or MagicDNS.)"
+echo "  5. Immediate update (no Wait for Watchtower): run ./pull-and-restart.sh on the server, or from PC: .\\trigger-update.ps1"
 echo "=============================================="

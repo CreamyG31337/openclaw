@@ -32,37 +32,45 @@ These CLIs use your existing account (no API key). Install them **where OpenClaw
 - **Use:** `gemini "your prompt"` for coding, search, file ops.  
   [Docs](https://google-gemini.github.io/gemini-cli/)
 
-### 3. ChatGPT / Codex
+### 3. OpenAI Codex CLI (ChatGPT / Codex subscription or API key)
 
-- **Codex CLI** (OpenAI): [developers.openai.com/codex/cli](https://developers.openai.com/codex/cli) — check whether it uses your Codex subscription or an API key.
-- **Third-party ChatGPT CLIs** (e.g. `chatgpt-cli`, `chatGPT-shell-cli`) usually need an **API key**; Plus subscription alone often doesn’t expose one. If you have an OpenAI API key, you can add OpenAI as a provider in OpenClaw instead.
+- **Uses:** Your ChatGPT (Plus, Pro, Team, Edu, or Enterprise) account or an OpenAI API key.
+- **Install:**  
+  `npm install -g @openai/codex`
+- **Auth:** Run `codex login --device-auth` in the container — open the URL on your phone/laptop, enter the code, sign in with **ChatGPT email and password** (no API key). Or use an API key: `echo "$OPENAI_API_KEY" | codex login --with-api-key`. Credentials are stored in `~/.codex/` (mounted as `cli-auth/codex` in the gateway).
+- **Use:** `codex exec "your prompt"` (non-interactive one-off; alias `codex e`). For automation use `--full-auto` or `--dangerously-bypass-approvals-and-sandbox` in a container.  
+  [Docs](https://developers.openai.com/codex/cli/reference), [Non-interactive](https://developers.openai.com/codex/noninteractive), [Auth](https://developers.openai.com/codex/auth).
+
+**Third-party ChatGPT CLIs** (e.g. `chatgpt-cli`) usually need an API key. If you only use an OpenAI API key for models, you can add OpenAI as a provider in OpenClaw instead.
 
 ## Skills so the agent uses these CLIs
 
 Skills teach OpenClaw **when** and **how** to use a tool. This repo includes two skills you can copy onto the server:
 
-| Skill        | Binary   | Purpose                                      |
-|-------------|----------|----------------------------------------------|
-| `claude-code` | `claude` | Use Claude Code CLI for coding (Pro/Max).   |
-| `gemini-cli`  | `gemini` | Use Gemini CLI for coding (Google account). |
+| Skill          | Binary   | Purpose                                        |
+|----------------|----------|------------------------------------------------|
+| `claude-code`  | `claude` | Use Claude Code CLI for coding (Pro/Max).     |
+| `gemini-cli`   | `gemini` | Use Gemini CLI for coding (Google account).  |
+| `openai-codex` | `codex`  | Use OpenAI Codex CLI for coding (ChatGPT/API).|
 
 **Install on the server (Docker):**
 
 1. Copy the skill folder into the gateway’s config (e.g. from this repo’s `deploy/skills/`):
    ```bash
    # From your machine (PowerShell), copy skills to server
-   scp -i C:\Utils\id_rsa -r deploy/skills/claude-code deploy/skills/gemini-cli lance@ts-ubuntu-server:~/.openclaw/skills/
+   scp -i YOUR_KEY -r deploy/skills/claude-code deploy/skills/gemini-cli YOUR_USER@YOUR_SERVER:~/.openclaw/skills/
    ```
 2. Install the CLI **inside** the gateway container (so `exec` can run it):
    ```bash
-   ssh -i C:\Utils\id_rsa lance@ts-ubuntu-server
-   docker exec -it openclaw-gateway sh -c "npm i -g @anthropic-ai/claude-code || true"
-   docker exec -it openclaw-gateway sh -c "npm i -g @google/gemini-cli || true"
+   ssh -i YOUR_KEY YOUR_USER@YOUR_SERVER
+   docker exec -u root openclaw-gateway sh -c "npm i -g @anthropic-ai/claude-code || true"
+   docker exec -u root openclaw-gateway sh -c "npm i -g @google/gemini-cli || true"
+   docker exec -u root openclaw-gateway sh -c "npm i -g @openai/codex || true"
    ```
-3. **Log in** so the CLIs can use your account. See [Login / auth for Claude and Gemini](#login--auth-for-claude-and-gemini-in-the-gateway) below.
+3. **Log in** so the CLIs can use your account. See [Login / auth for Claude, Gemini, and Codex](#login--auth-for-claude-gemini-and-codex-in-the-gateway) below.
 4. Restart the gateway or start a new session so it loads the new skills.
 
-## Login / auth for Claude and Gemini in the gateway
+## Login / auth for Claude, Gemini, and Codex in the gateway
 
 The gateway runs in a **Docker container** with no browser. You have two ways to get the CLIs authenticated.
 
@@ -72,12 +80,13 @@ Use this if you want to use your **subscription** (Claude Pro/Max, Google accoun
 
 1. SSH to the server and attach to the gateway container:
    ```bash
-   ssh -i C:\Utils\id_rsa lance@ts-ubuntu-server
+   ssh -i YOUR_KEY YOUR_USER@YOUR_SERVER
    docker exec -it openclaw-gateway sh
    ```
 2. Inside the container, run the CLI:
    - **Claude:** run `claude`. It will print a URL or “Open this link…” — open that URL **on your phone or laptop**, sign in with your Anthropic account, then return to the terminal; the CLI should complete login.
-   - **Gemini:** run `gemini`. It may print a URL or show “Login with Google” — open the URL on your phone/laptop, sign in, then the CLI in the container should finish. (If it only shows “Waiting for auth…” and times out, use Option B for Gemini.)
+   - **Gemini:** run `gemini`. It may print a URL or show "Login with Google" — open the URL on your phone/laptop, sign in, then the CLI in the container should finish. (If it only shows "Waiting for auth…" and times out, use Option B for Gemini.)
+   - **Codex:** run `codex login --device-auth`. It will print a URL and a code — open the URL on your phone or laptop, enter the code, then sign in. No API key needed. Credentials are stored in `~/.codex/` (mounted from host `cli-auth/codex`). **If you see “Please contact your workspace admin to enable device code authentication”,** use [Codex when device code is disabled](#codex-when-device-code-is-disabled) below instead.
 3. Exit the container (`exit`). The CLI stores credentials inside the container. They **persist until the container is recreated** (e.g. after a new image or `docker compose up -d --force-recreate`). If you want login to survive recreates, use Option B (API keys) or copy the CLI config dir from the container to a host path and mount it (CLI-specific).
 
 ### Option B — API keys / env (headless, survives restarts)
@@ -92,7 +101,9 @@ Use this when you can’t do interactive login or want the container to work aft
 
 - **Claude:** For non-interactive use (`claude -p`), set an **Anthropic API key** (from [console.anthropic.com](https://console.anthropic.com)). On the server, add `ANTHROPIC_API_KEY=your_key_here` to the same `.env`, and ensure the gateway’s `environment` includes `ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}` (in the main compose or in an override). Restart the gateway.
 
-Note: An **API key** is not the same as a Pro/Max **subscription** — API usage is billed separately. If you only have a subscription and no API key, use Option A for Claude.
+- **Codex:** For non-interactive use (`codex exec`), set **OpenAI API key** (from [platform.openai.com](https://platform.openai.com/api-keys)). On the server, add `OPENAI_API_KEY=your_key_here` to the same `.env`; `remote-setup.sh` will add it to the gateway’s environment when set. Alternatively, run `echo "$OPENAI_API_KEY" | codex login --with-api-key` once inside the container so credentials are stored in the mounted `~/.codex/`.
+
+Note: An **API key** is not the same as a **subscription** — API usage may be billed separately. If you only have a subscription and no API key, use Option A for Claude/Codex.
 
 ### Summary
 
@@ -100,11 +111,42 @@ Note: An **API key** is not the same as a Pro/Max **subscription** — API usage
 |--------|-------------------------|-----------------------------|
 | Claude | `docker exec -it … sh` → `claude` → open URL on phone/laptop | `ANTHROPIC_API_KEY` in `.env` (API key) |
 | Gemini | `docker exec -it … sh` → `gemini` → open URL on phone/laptop | `GEMINI_API_KEY` in `.env` (Google AI Studio key) |
+| Codex  | `codex login --device-auth` in container, or [copy auth from PC](#codex-when-device-code-is-disabled) if device code is disabled | `OPENAI_API_KEY` in `.env` or `codex login --with-api-key` (optional) |
 
-If the CLIs are installed on **another machine** (e.g. your laptop) where OpenClaw runs exec via a node/bridge, put the skills in that machine’s `~/.openclaw/skills` and ensure `claude` / `gemini` are on PATH there.
+### Codex when device code is disabled
+
+If you get **“Please contact your workspace admin to enable device code authentication”**, your ChatGPT workspace has device code login turned off. You can still use your subscription without an API key by logging in on a machine with a browser and copying the auth file to the server.
+
+**Option 1 — Log in on your PC, then copy auth to the server (recommended):**
+
+1. On your **Windows PC** (or any machine with a browser), install Codex and log in:
+   ```powershell
+   npm i -g @openai/codex
+   codex login
+   ```
+   Complete the browser login. Codex stores credentials in `%USERPROFILE%\.codex\auth.json` (Windows) or `~/.codex/auth.json` (Mac/Linux).
+
+2. From the **deploy** folder on your PC, run the copy script (it uploads your local auth to the server’s `~/.openclaw/cli-auth/codex/`, which is mounted as `~/.codex` in the gateway):
+   ```powershell
+   .\copy-codex-auth.ps1
+   ```
+
+3. Restart the gateway so it picks up the credentials:  
+   `ssh ... "docker restart openclaw-gateway"`
+
+**Option 2 — SSH port forward and log in inside the container:**
+
+If you can forward ports from your PC to the server, you can use the normal browser flow from the container:
+
+1. From your PC: `ssh -L 1455:localhost:1455 YOUR_USER@YOUR_SERVER`
+2. In that SSH session: `docker exec -it openclaw-gateway sh`, then run `codex login`. Open the URL **on your PC**; the callback will reach the container via the tunnel.
+
+**Option 3 — API key:** Use an OpenAI API key (see Option B above). Billing is separate from your ChatGPT subscription.
+
+If the CLIs are installed on **another machine** (e.g. your laptop) where OpenClaw runs exec via a node/bridge, put the skills in that machine’s `~/.openclaw/skills` and ensure `claude` / `gemini` / `codex` are on PATH there.
 
 ## Summary
 
 - **Coding with OpenClaw today:** Use its built-in model + **exec**, **read**, **write**, **edit**, **apply_patch**. No extra CLIs required.
-- **Use your subscriptions:** Install **Claude Code CLI** and/or **Gemini CLI** where exec runs; add the **claude-code** and **gemini-cli** skills from `deploy/skills/` so the agent knows to call them for coding tasks.
-- **ChatGPT/Codex:** Prefer adding an OpenAI **API** provider in OpenClaw if you have an API key; otherwise check Codex CLI docs for subscription-based auth.
+- **Use your subscriptions:** Install **Claude Code CLI**, **Gemini CLI**, and/or **OpenAI Codex CLI** where exec runs; add the **claude-code**, **gemini-cli**, and **openai-codex** skills from `deploy/skills/` so the agent knows to call them for coding tasks.
+- **Codex:** Use `@openai/codex` with ChatGPT OAuth or `OPENAI_API_KEY`; auth is persisted in `~/.codex/` (mounted as `cli-auth/codex` in the gateway).
