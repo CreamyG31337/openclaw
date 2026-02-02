@@ -1,0 +1,10 @@
+# Python venv for skills (PEP 723 scripts: searxng etc.) — isolated so python3 finds httpx, rich
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    python3 python3-venv python3-pip \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* \
+    && python3 -m venv --copies /opt/openclaw-venv \
+    && /opt/openclaw-venv/bin/pip install --no-cache-dir httpx rich \
+    && chown -R node:node /opt/openclaw-venv
+ENV PATH="/opt/openclaw-venv/bin:${PATH}"
+# ClawHub CLI so the container (and agent) can run clawhub search / install
+RUN npm i -g clawhub

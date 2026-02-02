@@ -1,0 +1,2 @@
+# Shell scripts must use LF so Linux (e.g. remote-setup.sh on server) doesn't see $'\r': command not found
+*.sh text eol=lf
