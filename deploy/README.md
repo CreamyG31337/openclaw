@@ -78,8 +78,10 @@ Set `ZAI_API_KEY` in `deploy/.env` (or leave unset to skip Z.AI).
 If **Ollama** is running on the same server (e.g. `ollama serve` on port 11434), the deploy configures OpenClaw to use it:
 
 - The gateway container gets **host access** via `host.docker.internal` so it can call `http://host.docker.internal:11434/v1` (Ollama’s OpenAI-compatible API).
-- An **ollama** provider is added to `openclaw.json` with models: `llama3.2`, `llama3.1`, `mistral`, `codellama`. Use `/model` in chat to switch, or add more in `~/.openclaw/openclaw.json` to match your `ollama list`.
+- An **ollama** provider is added to `openclaw.json` with models: `llama3.2`, `llama3.1`, `mistral`, `codellama`. Use `/model` in chat to switch.
 - If no config exists yet and Z.AI is not set, the default model is **ollama/llama3.2**; otherwise the default stays **zai/glm-4.7** with Ollama available as an extra model.
+
+**Adding new Ollama models (e.g. dolphin-mixtral):** OpenClaw only uses Ollama models that are listed in `openclaw.json`. If you pull a new model with `ollama pull dolphin-mixtral:8x7b` and switch to it in the UI but get no responses, the model is not registered. Either run the sync script on the server (so `openclaw.json` is updated from `ollama list`), or add the model manually. From your PC: `.\run-sync-ollama.ps1` (requires `deploy/.env`). On the server: `python3 ~/openclaw/deploy/sync-ollama-models.py` (uses `~/.openclaw/openclaw.json`). Then restart the gateway or switch model again. In the UI use **lowercase** `ollama/dolphin-mixtral:8x7b` (not `Ollama/...`).
 
 Ensure Ollama is listening on `0.0.0.0:11434` (or that the Docker host gateway can reach it). On Linux, `OLLAMA_HOST=0.0.0.0 ollama serve` or set `OLLAMA_HOST` in your Ollama environment.
 

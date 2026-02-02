@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Sync ollama list to OpenClaw openclaw.json ollama provider and agents.defaults.models."""
+"""Sync ollama list to OpenClaw openclaw.json ollama provider and agents.defaults.models.
+Run on the server where Ollama and OpenClaw config live (e.g. OPENCLAW_CONFIG_DIR=~/.openclaw).
+"""
 import json
+import os
 import subprocess
 import sys
 
-CONFIG_PATH = "/home/lance/.openclaw/openclaw.json"
+CONFIG_DIR = os.environ.get("OPENCLAW_CONFIG_DIR") or os.path.expanduser("~/.openclaw")
+CONFIG_PATH = os.path.join(CONFIG_DIR, "openclaw.json")
 
 # Get ollama list (run on host - ollama might be in docker or host)
 def get_ollama_models():
