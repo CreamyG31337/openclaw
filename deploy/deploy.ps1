@@ -63,9 +63,16 @@ if ($env:OPENCLAW_REPO) { $RemoteEnv += "export OPENCLAW_REPO='$($env:OPENCLAW_R
 if ($env:OPENCLAW_REPO_BRANCH) { $RemoteEnv += "export OPENCLAW_REPO_BRANCH='$($env:OPENCLAW_REPO_BRANCH)'; " }
 if ($env:OPENAI_API_KEY) { $RemoteEnv += "export OPENAI_API_KEY='$($env:OPENAI_API_KEY)'; " }
 if ($env:OPENROUTER_API_KEY) { $RemoteEnv += "export OPENROUTER_API_KEY='$($env:OPENROUTER_API_KEY)'; " }
-# Copy script to server and run (avoids stdin issues with PowerShell). Use LF only; strip any CR so bash never sees $'\r': command not found.
+# Copy script to server and run. Use a temp file + SCP so the remote file is LF-only (piping from PowerShell can re-introduce CRLF and cause $'\r': command not found).
 $ScriptContent = (Get-Content -Path $RemoteScript -Raw) -replace "`r`n", "`n" -replace "`r", ""
-$ScriptContent | ssh -i $KeyPath -o StrictHostKeyChecking=accept-new $Target "${RemoteEnv}cat > /tmp/openclaw-remote-setup.sh && chmod +x /tmp/openclaw-remote-setup.sh && bash /tmp/openclaw-remote-setup.sh"
+$TempScript = [System.IO.Path]::GetTempFileName()
+try {
+  [System.IO.File]::WriteAllText($TempScript, $ScriptContent, [System.Text.UTF8Encoding]::new($false))
+  scp -i $KeyPath -o StrictHostKeyChecking=accept-new $TempScript "${Target}:/tmp/openclaw-remote-setup.sh"
+  ssh -i $KeyPath -o StrictHostKeyChecking=accept-new $Target "${RemoteEnv}chmod +x /tmp/openclaw-remote-setup.sh && bash /tmp/openclaw-remote-setup.sh"
+} finally {
+  Remove-Item -LiteralPath $TempScript -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host ""
 Write-Host "Done. Check output above for gateway token and next steps." -ForegroundColor Green
