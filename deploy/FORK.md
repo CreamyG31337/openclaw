@@ -1,5 +1,7 @@
 # Deploy from your OpenClaw fork
 
+**Single guide for “what we patch” and “how to update from upstream”:** [PATCHING-AND-UPSTREAM.md](PATCHING-AND-UPSTREAM.md).
+
 We keep a clone of [openclaw/openclaw](https://github.com/openclaw/openclaw) in **openclaw-src/** with our patches applied (venv, ClawHub, git, cli-auth volumes, env vars). Push that to your fork and deploy from it so you get source control and no server-side patching.
 
 ## What’s in the fork (openclaw-src)

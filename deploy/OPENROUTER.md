@@ -82,4 +82,4 @@ Or, if using compose: `cd ~/openclaw && docker compose up -d openclaw-gateway`.
 | 3 | Set `agents.defaults.model.primary` in `openclaw.json` to e.g. `openrouter/anthropic/claude-sonnet-4` or `openrouter/auto` |
 | 4 | Restart the gateway |
 
-After that, the bot uses OpenRouter for the default model; you can switch models in chat (e.g. `/model`) if you added them to `agents.defaults.models`.
+After that, the bot uses OpenRouter for the default model; you can switch models via the **model dropdown** on the chat page (or change the default in settings) if you added them to `agents.defaults.models`.

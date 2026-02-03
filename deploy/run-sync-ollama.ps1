@@ -28,7 +28,7 @@ if (-not $Server -or -not $KeyPath) {
 if (-not $User) { $User = "deploy" }
 $Target = "${User}@${Server}"
 
-Write-Host "==> Syncing Ollama models into OpenClaw config on $Target..." -ForegroundColor Cyan
+Write-Host "==> Syncing Ollama + Z.AI models into OpenClaw config on $Target..." -ForegroundColor Cyan
 $ScriptPath = Join-Path $DeployDir "sync-ollama-models.py"
 $ScriptContent = (Get-Content -Path $ScriptPath -Raw) -replace "`r`n", "`n" -replace "`r", ""
 $ConfigDir = "/home/$User/.openclaw"
@@ -37,4 +37,4 @@ $ScriptContent | ssh -i $KeyPath -o StrictHostKeyChecking=accept-new $Target "ca
 Write-Host "==> Restarting gateway..." -ForegroundColor Cyan
 ssh -i $KeyPath -o StrictHostKeyChecking=accept-new $Target "docker restart openclaw-gateway"
 
-Write-Host "Done. Use ollama/dolphin-mixtral:8x7b (lowercase) in the UI." -ForegroundColor Green
+Write-Host "Done. Ollama + Z.AI model allowlist refreshed." -ForegroundColor Green

@@ -27,6 +27,42 @@ def display_name(model_id):
     name = model_id.replace(":", " ").replace("-", " ").title()
     return name
 
+def run_json(cmd):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        if r.returncode != 0 or not r.stdout:
+            return None
+        return json.loads(r.stdout)
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return None
+
+def get_zai_models():
+    # Prefer host CLI if available; fallback to the gateway container CLI.
+    data = run_json(["openclaw", "models", "list", "--all", "--provider", "zai", "--json"])
+    if data is None:
+        data = run_json(
+            [
+                "docker",
+                "exec",
+                "openclaw-gateway",
+                "node",
+                "dist/index.js",
+                "models",
+                "list",
+                "--all",
+                "--provider",
+                "zai",
+                "--json",
+            ]
+        )
+    models = []
+    for row in (data or {}).get("models", []):
+        key = str(row.get("key", "")).strip()
+        name = str(row.get("name", "")).strip()
+        if key.startswith("zai/"):
+            models.append({"key": key, "name": name})
+    return models
+
 def main():
     with open(CONFIG_PATH) as f:
         config = json.load(f)
@@ -44,6 +80,14 @@ def main():
         "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
         "contextWindow": 128000,
         "maxTokens": 4096,
+        # Ollama's OpenAI-compatible API behaves more like classic max_tokens and
+        # does not support newer OpenAI fields (developer role, reasoning_effort).
+        "compat": {
+            "supportsStore": False,
+            "supportsDeveloperRole": False,
+            "supportsReasoningEffort": False,
+            "maxTokensField": "max_tokens",
+        },
     }
     reasoning_models = {"deepseek-r1", "phi4-reasoning", "reasoning"}
     provider_models = []
@@ -71,11 +115,18 @@ def main():
     agents_models = {k: v for k, v in agents_models.items() if not k.startswith("ollama/")}
     for mid in models:
         agents_models[f"ollama/{mid}"] = {"alias": display_name(mid)}
+    zai_models = get_zai_models()
+    for entry in zai_models:
+        key = entry["key"]
+        alias = entry["name"] or key.split("/", 1)[-1]
+        agents_models[key] = {"alias": alias}
     config["agents"]["defaults"]["models"] = agents_models
 
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
 
+    if zai_models:
+        print("Synced", len(zai_models), "Z.AI models:", ", ".join([m["key"] for m in zai_models]))
     print("Synced", len(models), "Ollama models:", ", ".join(models))
 
 if __name__ == "__main__":
