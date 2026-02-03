@@ -1,0 +1,13 @@
+{
+  "folders": [
+    {
+      "name": "openclaw (deploy)",
+      "path": "."
+    },
+    {
+      "name": "openclaw-src (upstream)",
+      "path": "openclaw-src"
+    }
+  ],
+  "settings": {}
+}
