@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
 """Sync ollama list to OpenClaw openclaw.json ollama provider and agents.defaults.models.
 Run on the server where Ollama and OpenClaw config live (e.g. OPENCLAW_CONFIG_DIR=~/.openclaw).
+
+Only includes models that:
+1. Report "tools" capability via /api/show
+2. Are not in the blocklist (models that report tools but don't implement properly)
 """
 import json
 import os
 import subprocess
 import sys
+import urllib.request
+import urllib.error
 
 CONFIG_DIR = os.environ.get("OPENCLAW_CONFIG_DIR") or os.path.expanduser("~/.openclaw")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "openclaw.json")
+OLLAMA_API_URL = os.environ.get("OLLAMA_API_URL") or "http://127.0.0.1:11434"
+
+# Models that report "tools" capability but don't properly implement tool_calls array.
+# They return tool calls as JSON text in the content field instead.
+BROKEN_TOOL_MODELS = {
+    "mistral-small",
+    "qwen2.5-coder",
+}
 
 # Get ollama list (run on host - ollama might be in docker or host)
 def get_ollama_models():
@@ -21,6 +35,54 @@ def get_ollama_models():
         except (FileNotFoundError, subprocess.TimeoutExpired):
             continue
     return []
+
+
+def get_model_capabilities(model_id):
+    """Query Ollama /api/show to get model capabilities."""
+    try:
+        req = urllib.request.Request(
+            f"{OLLAMA_API_URL}/api/show",
+            data=json.dumps({"model": model_id}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            return data.get("capabilities", [])
+    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError):
+        return []
+
+
+def is_model_broken(model_id):
+    """Check if model is in the blocklist of broken tool implementations."""
+    base_name = model_id.split(":")[0]
+    return base_name in BROKEN_TOOL_MODELS
+
+
+def filter_tool_capable_models(models):
+    """Filter to only models that support tools and aren't broken."""
+    filtered = []
+    skipped_no_tools = []
+    skipped_broken = []
+
+    for mid in models:
+        if is_model_broken(mid):
+            skipped_broken.append(mid)
+            continue
+
+        caps = get_model_capabilities(mid)
+        if "tools" not in caps:
+            skipped_no_tools.append(mid)
+            continue
+
+        filtered.append(mid)
+
+    if skipped_no_tools:
+        print(f"Skipped (no tools capability): {', '.join(skipped_no_tools)}", file=sys.stderr)
+    if skipped_broken:
+        print(f"Skipped (broken tool implementation): {', '.join(skipped_broken)}", file=sys.stderr)
+
+    return filtered
 
 def display_name(model_id):
     """Human-readable name from id like llama3.2:3b -> Llama 3.2 3B"""
@@ -67,9 +129,16 @@ def main():
     with open(CONFIG_PATH) as f:
         config = json.load(f)
 
-    models = get_ollama_models()
-    if not models:
+    all_models = get_ollama_models()
+    if not all_models:
         print("No ollama models found (run ollama list)", file=sys.stderr)
+        sys.exit(1)
+
+    # Filter to only tool-capable, non-broken models
+    print(f"Found {len(all_models)} Ollama models, checking tool capability...")
+    models = filter_tool_capable_models(all_models)
+    if not models:
+        print("No tool-capable Ollama models found after filtering", file=sys.stderr)
         sys.exit(1)
 
     # Build provider model entries (OpenClaw ollama provider format)

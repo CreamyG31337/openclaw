@@ -9,5 +9,7 @@
       "path": "openclaw-src"
     }
   ],
-  "settings": {}
+  "settings": {
+    "powershell.cwd": "openclaw (deploy)"
+  }
 }
