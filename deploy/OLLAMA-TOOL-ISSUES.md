@@ -132,6 +132,14 @@ Add UI indicator that Ollama models have limited tool support:
 - ✅ Option C: Filter by actual tool capability - `discoverOllamaModels()` now queries `/api/show` and only includes models with `tools` capability
 - ✅ Tool schema sanitization - Ollama now uses the same schema sanitization as Google (strips `anyOf`, `oneOf`, `additionalProperties`, etc.)
 - ✅ Streaming + tools - Fixed upstream by Ollama (May 2025, PR #10415)
+- ✅ Blocklist for broken models - Models that report `tools` capability but return tool calls as text instead of proper `tool_calls` array are filtered out
+
+**BLOCKLISTED MODELS** (report tools but don't implement properly):
+- `mistral-small` - Returns tool calls as JSON text in content field
+- `qwen2.5-coder` - Returns tool calls as JSON text in content field
+
+**WORKING MODELS** (verified):
+- `llama3.1`, `llama3.2`, `qwen3`, `qwen3-coder`, `granite3.3`
 
 **NOT NEEDED:**
 - Option B (disable streaming) - Fixed upstream

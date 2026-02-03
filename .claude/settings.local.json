@@ -4,7 +4,8 @@
       "Bash(npx tsc:*)",
       "Bash(pnpm tsgo:*)",
       "Bash(npm run tsgo:*)",
-      "Bash(node_modules/.bin/tsc:*)"
+      "Bash(node_modules/.bin/tsc:*)",
+      "Bash(ssh:*)"
     ]
   }
 }
