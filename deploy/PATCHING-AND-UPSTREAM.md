@@ -1,87 +1,130 @@
-# Patching and upstream — one guide
+# Patching and Upstream Guide
 
-**Goal:** Know what we changed, where it lives, and how to pull upstream changes without losing our work. Some manual conflict resolution is expected.
+**Goal:** Maintain our custom features while pulling in upstream fixes.
 
----
-
-## 1. What we have (two places)
-
-| Place | What it is | Upstream? |
-|-------|------------|------------|
-| **openclaw/openclaw** (GitHub) | The app: gateway, Control UI (`ui/`), CLI, Dockerfile, etc. | Yes — **this is upstream**. It changes often. |
-| **Our fork** (e.g. CreamyG31337/openclaw, branch `deploy`) | Same app **plus our patches** (see below). We deploy from here. | No — we maintain it. |
-| **This repo** (openclaw with `deploy/` folder) | Our deploy tooling only: scripts, compose, docs. No app source. | No — it’s ours. Not a fork of the app. |
-
-So: **upstream** = openclaw/openclaw (the app). **Our app** = the fork. **Our tooling** = this repo’s `deploy/` folder.
+> [!WARNING]
+> Expect **significant conflicts** every time. Our UI changes are invasive.
+> This guide documents the exact process that worked last time.
 
 ---
 
-## 2. Our patches (what we maintain that isn’t in upstream)
+## The Process That Works
 
-These are the changes we care about when upstream updates.
+We use a **rebase workflow on a separate branch** to keep history clean and make conflicts manageable.
 
-### 2a. Patches in the **app** (live in the fork, branch `deploy`)
+### Step 1: Create a Working Branch
 
-- **Models dropdown** — Control UI: model selector in the chat header.
-  - Files: `ui/src/ui/app-render.helpers.ts`, `ui/src/ui/controllers/models.ts`, `ui/src/ui/controllers/sessions.ts`, `ui/src/ui/app-chat.ts`, `ui/src/ui/app-gateway.ts`, `ui/src/ui/app-view-state.ts`, `ui/src/ui/app.ts`, `ui/src/ui/types.ts`, `ui/src/styles/chat/layout.css`, `ui/src/ui/views/chat.test.ts`.
-- **Dockerfile / docker-compose** (if we added venv, ClawHub, cli-auth volumes, etc. in the fork) — same repo, same branch.
+Don't touch `deploy` directly. Work on a throwaway branch.
 
-All of the above live in **openclaw-src** locally (your clone of the fork) and in **your fork on GitHub**. They are **not** in the `deploy/` folder.
+```powershell
+cd openclaw-src
+git fetch upstream
+git checkout deploy
+git checkout -b merge-upstream-updates
+```
 
-### 2b. Tooling in **deploy/** (this repo)
+### Step 2: Rebase Onto Upstream
 
-- **Scripts:** `sync-ollama-models.py`, `run-sync-ollama.ps1`, `remote-setup.sh`, `deploy.ps1`, etc.
-- **Config:** `deploy/.env` (OPENCLAW_REPO, OPENCLAW_REPO_BRANCH, server, keys).
-- **Docs:** this file, HOW-DEPLOY-WORKS.md, FORK.md, etc.
+```powershell
+git rebase upstream/main
+```
 
-This is our deploy and server-admin stuff. It is **not** “patched from upstream” — we own it. Upstream doesn’t have a `deploy/` repo; we do.
+**This WILL stop with conflicts.** That's expected.
 
----
+### Step 3: Fix Each Conflict (One Commit at a Time)
 
-## 3. Updating from upstream without losing our changes
+Git will pause at each conflicting commit. For each one:
 
-We only “merge upstream” into **the app** (the fork). Deploy tooling doesn’t get merged from upstream; it’s separate.
-
-**Workflow (do this when you want upstream fixes/features and want to keep our patches):**
-
-1. **Check if you’re behind**
-   - From `deploy/`: run `.\check-upstream.ps1` (uses server’s clone), or  
-   - Locally in openclaw-src: `git fetch upstream` then `git log HEAD..upstream/main --oneline`.  
-   - If there are commits listed, you’re behind; continue. If “None. Your base is current”, you’re done.
-
-2. **Merge upstream into our app branch (openclaw-src)**
+1. **See what's broken:**
    ```powershell
-   cd openclaw-src
-   git fetch upstream
-   git checkout deploy
-   git merge upstream/main
-   ```
-   - **No conflicts:** Go to step 3.
-   - **Conflicts:** Git will list files. Resolve by hand:
-     - In **our patch files** (see 2a): keep our behavior; integrate any upstream changes you want (e.g. types, refactors). Our patch files: `ui/src/ui/app-render.helpers.ts`, `ui/src/ui/controllers/models.ts`, `ui/src/ui/controllers/sessions.ts`, and the other dropdown-related files listed in 2a. For Dockerfile/docker-compose, same idea: keep our additions, take upstream’s other changes.
-     - In **files we didn’t change**: take upstream’s version (e.g. `git checkout --theirs path/to/file`), unless you have a reason to keep a local change.
-     - Then: `git add .` and `git commit -m "Merge upstream/main; keep our patches"`.
-
-3. **Push the fork**
-   ```powershell
-   git push origin deploy
+   git status
    ```
 
-4. **Redeploy** so the server uses the updated app:
-   ```powershell
-   cd deploy
-   .\deploy.ps1
-   ```
-   (Or use your registry flow / trigger-update.ps1 if that’s how you roll.)
+2. **For files WE heavily modified** (see list below): Open in editor, keep our logic, integrate any new upstream stuff we want.
 
-After this, the app (fork) has upstream’s latest plus our patches. Deploy tooling (this repo) is unchanged unless you edit it yourself.
+3. **For files WE DON'T care about:** Just take theirs:
+   ```powershell
+   git checkout --theirs path/to/file
+   ```
+
+4. **Mark resolved and continue:**
+   ```powershell
+   git add .
+   git rebase --continue
+   ```
+
+5. **Repeat** until rebase completes.
+
+### Step 4: Build and Test
+
+```powershell
+cd ui
+npm run build
+```
+
+If build fails, you missed something. Fix it, amend the commit.
+
+### Step 5: Merge Into Deploy
+
+Once rebase is clean and builds work:
+
+```powershell
+git checkout deploy
+git merge merge-upstream-updates
+git push origin deploy
+```
+
+### Step 6: Deploy
+
+```powershell
+cd ../deploy
+.\deploy.ps1
+```
 
 ---
 
-## 4. Summary
+## Our Patch Files (The Conflict Zones)
 
-- **Upstream** = openclaw/openclaw (the app). **Our app** = fork, branch `deploy`, with our patches (dropdown, etc.). **Our tooling** = this repo’s `deploy/` (scripts, docs); not part of the app.
-- **Our patches** = app changes in the fork (see section 2a). Deploy folder = our scripts and config (see 2b).
-- **To update from upstream:** merge `upstream/main` into the fork’s `deploy` branch in openclaw-src, resolve conflicts (keep our patches, take or merge upstream elsewhere), push, redeploy. Manual fixing is expected when the same files change upstream.
+These are the files we've heavily modified. **Keep our logic in these:**
 
-This file is the single place for “what we patch” and “how we pull upstream without losing our changes.” Point new docs or scripts here so we don’t go in circles.
+### 🛑 Critical (We Rewrote These)
+| File | Our Change |
+|------|------------|
+| `ui/src/ui/app-render.helpers.ts` | **Session Panel** - entire `renderChatControls` function is ours |
+| `ui/src/ui/app-chat.ts` | Removed `activeMinutes` filter in `refreshChat()` |
+| `ui/src/ui/storage.ts` | Added `chatSessionsExpanded` setting |
+| `ui/src/ui/navigation.ts` | Changed Chat tab subtitle |
+| `ui/src/styles/chat/layout.css` | Session panel CSS, `overflow: visible` on content-header |
+| `ui/src/styles/layout.css` | `overflow: visible` on `.content-header` |
+
+### ⚠️ Medium (We Added To These)
+| File | Our Change |
+|------|------------|
+| `ui/src/ui/app-view-state.ts` | Added session panel state |
+| `ui/src/ui/controllers/models.ts` | Model dropdown logic |
+| `ui/src/ui/controllers/sessions.ts` | Session management |
+
+---
+
+## If It All Goes Wrong
+
+Abort and start fresh:
+
+```powershell
+git rebase --abort
+git checkout deploy
+git branch -D merge-upstream-updates
+```
+
+Then try again, or ask for help.
+
+---
+
+## Post-Merge Verification
+
+After deploying, check:
+- [ ] Session panel expands when clicked
+- [ ] Old sessions (>2 hours) are visible
+- [ ] New Session [+] button works
+- [ ] Dropdown not clipped (overflow issue)
+- [ ] Model selector works

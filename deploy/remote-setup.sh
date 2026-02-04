@@ -195,17 +195,23 @@ CONFIG
 else
   # Ensure existing config has Control UI auth relaxed (token-only, no device identity)
   if [[ -f "$OPENCLAW_CONFIG_DIR/openclaw.json" ]]; then
-    python3 -c "
-import json, os
+    if python3 -c "
+import json, os, sys
 p = os.environ.get('OPENCLAW_CONFIG_DIR', os.path.expanduser('~/.openclaw')) + '/openclaw.json'
-with open(p) as f: c = json.load(f)
-c.setdefault('gateway', {})
-c['gateway'].setdefault('controlUi', {})
-c['gateway']['controlUi']['allowInsecureAuth'] = True
-c['gateway']['controlUi']['dangerouslyDisableDeviceAuth'] = True
-with open(p, 'w') as f: json.dump(c, f, indent=2)
-"
-    echo "==> Updated openclaw.json: controlUi allowInsecureAuth + dangerouslyDisableDeviceAuth = true"
+try:
+    with open(p) as f: c = json.load(f)
+    c.setdefault('gateway', {})
+    c['gateway'].setdefault('controlUi', {})
+    c['gateway']['controlUi']['allowInsecureAuth'] = True
+    c['gateway']['controlUi']['dangerouslyDisableDeviceAuth'] = True
+    with open(p, 'w') as f: json.dump(c, f, indent=2)
+except PermissionError:
+    sys.exit(1)
+"; then
+      echo "==> Updated openclaw.json: controlUi allowInsecureAuth + dangerouslyDisableDeviceAuth = true"
+    else
+      echo "==> WARNING: Could not update openclaw.json (permission denied). On the server run: sudo chown -R \$(whoami): $OPENCLAW_CONFIG_DIR"
+    fi
   fi
 fi
 
