@@ -135,6 +135,20 @@ describe("gateway config.patch", () => {
           raw: JSON.stringify({
             gateway: { mode: "local" },
             channels: { telegram: { botToken: "token-1" } },
+            models: {
+              providers: {
+                ollama: {
+                  baseUrl: "http://127.0.0.1:11434/v1",
+                  models: [
+                    {
+                      id: "qwen2.5:7b",
+                      name: "Qwen 2.5 7B",
+                      maxTokens: 4096,
+                    },
+                  ],
+                },
+              },
+            },
           }),
         },
       }),
@@ -189,8 +203,16 @@ describe("gateway config.patch", () => {
     const storedRaw = await fs.readFile(CONFIG_PATH, "utf-8");
     const stored = JSON.parse(storedRaw) as {
       channels?: { telegram?: { botToken?: string } };
+      models?: {
+        providers?: {
+          ollama?: {
+            models?: Array<{ maxTokens?: number }>;
+          };
+        };
+      };
     };
     expect(stored.channels?.telegram?.botToken).toBe("token-1");
+    expect(stored.models?.providers?.ollama?.models?.[0]?.maxTokens).toBe(4096);
   });
 
   it("writes config, stores sentinel, and schedules restart", async () => {

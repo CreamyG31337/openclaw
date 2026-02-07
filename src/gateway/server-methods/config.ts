@@ -179,7 +179,18 @@ export const configHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, parsedRes.error));
       return;
     }
-    const validated = validateConfigObjectWithPlugins(parsedRes.parsed);
+    let restored: unknown;
+    try {
+      restored = restoreRedactedValues(parsedRes.parsed, snapshot.config);
+    } catch (err) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, String(err instanceof Error ? err.message : err)),
+      );
+      return;
+    }
+    const validated = validateConfigObjectWithPlugins(restored);
     if (!validated.ok) {
       respond(
         false,
@@ -190,27 +201,13 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    let restored: typeof validated.config;
-    try {
-      restored = restoreRedactedValues(
-        validated.config,
-        snapshot.config,
-      ) as typeof validated.config;
-    } catch (err) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, String(err instanceof Error ? err.message : err)),
-      );
-      return;
-    }
-    await writeConfigFile(restored);
+    await writeConfigFile(validated.config);
     respond(
       true,
       {
         ok: true,
         path: CONFIG_PATH,
-        config: redactConfigObject(restored),
+        config: redactConfigObject(validated.config),
       },
       undefined,
     );
@@ -379,7 +376,18 @@ export const configHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, parsedRes.error));
       return;
     }
-    const validated = validateConfigObjectWithPlugins(parsedRes.parsed);
+    let restoredApply: unknown;
+    try {
+      restoredApply = restoreRedactedValues(parsedRes.parsed, snapshot.config);
+    } catch (err) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, String(err instanceof Error ? err.message : err)),
+      );
+      return;
+    }
+    const validated = validateConfigObjectWithPlugins(restoredApply);
     if (!validated.ok) {
       respond(
         false,
@@ -390,21 +398,7 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    let restoredApply: typeof validated.config;
-    try {
-      restoredApply = restoreRedactedValues(
-        validated.config,
-        snapshot.config,
-      ) as typeof validated.config;
-    } catch (err) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, String(err instanceof Error ? err.message : err)),
-      );
-      return;
-    }
-    await writeConfigFile(restoredApply);
+    await writeConfigFile(validated.config);
 
     const sessionKey =
       typeof (params as { sessionKey?: unknown }).sessionKey === "string"
@@ -447,7 +441,7 @@ export const configHandlers: GatewayRequestHandlers = {
       {
         ok: true,
         path: CONFIG_PATH,
-        config: redactConfigObject(restoredApply),
+        config: redactConfigObject(validated.config),
         restart,
         sentinel: {
           path: sentinelPath,
