@@ -34,10 +34,25 @@ mkdir -p "$OPENCLAW_CONFIG_DIR" "$OPENCLAW_WORKSPACE_DIR" "$OPENCLAW_CONFIG_DIR/
 
 echo "==> Cloning OpenClaw..."
 if [[ -d "$OPENCLAW_DIR/.git" ]]; then
-  (cd "$OPENCLAW_DIR" && \
-    if [[ -n "$OPENCLAW_REPO" ]]; then git remote set-url origin "$OPENCLAW_REPO"; fi && \
-    git fetch --all && \
-    if [[ -n "$OPENCLAW_REPO_BRANCH" ]]; then git reset --hard "origin/$OPENCLAW_REPO_BRANCH" && git checkout -B "$OPENCLAW_REPO_BRANCH" "origin/$OPENCLAW_REPO_BRANCH"; else git reset --hard && git pull; fi)
+  (
+    cd "$OPENCLAW_DIR"
+    if [[ -n "$OPENCLAW_REPO" ]]; then
+      git remote set-url origin "$OPENCLAW_REPO"
+    fi
+    git fetch --all
+    if [[ -n "$OPENCLAW_REPO_BRANCH" ]]; then
+      if ! git rev-parse --verify --quiet "origin/$OPENCLAW_REPO_BRANCH" >/dev/null; then
+        echo "ERROR: Branch 'origin/$OPENCLAW_REPO_BRANCH' not found in $OPENCLAW_REPO"
+        echo "Check OPENCLAW_REPO_BRANCH in deploy/.env and push that branch to origin."
+        exit 1
+      fi
+      git reset --hard "origin/$OPENCLAW_REPO_BRANCH"
+      git checkout -B "$OPENCLAW_REPO_BRANCH" "origin/$OPENCLAW_REPO_BRANCH"
+    else
+      git reset --hard
+      git pull
+    fi
+  )
 else
   if [[ -n "$OPENCLAW_REPO_BRANCH" ]]; then
     git clone -b "$OPENCLAW_REPO_BRANCH" "$OPENCLAW_REPO" "$OPENCLAW_DIR"
@@ -133,7 +148,8 @@ if [[ ! -f "$OPENCLAW_CONFIG_DIR/openclaw.json" ]]; then
 {
   "gateway": {
     "mode": "local",
-    "controlUi": { "allowInsecureAuth": true, "dangerouslyDisableDeviceAuth": true }
+    "controlUi": { "allowInsecureAuth": true, "dangerouslyDisableDeviceAuth": true },
+    "auth": { "mode": "token", "token": "$OPENCLAW_GATEWAY_TOKEN" }
   },
   "agents": {
     "defaults": {
@@ -203,6 +219,7 @@ CONFIG
   echo "==> Created openclaw.json with default $PRIMARY and Ollama provider (host.docker.internal:11434)"
 else
   # Ensure existing config has Control UI auth relaxed (token-only, no device identity)
+  # and keep gateway auth token aligned with deploy token unless password mode is explicitly set.
   if [[ -f "$OPENCLAW_CONFIG_DIR/openclaw.json" ]]; then
     if python3 -c "
 import json, os, sys
@@ -213,11 +230,16 @@ try:
     c['gateway'].setdefault('controlUi', {})
     c['gateway']['controlUi']['allowInsecureAuth'] = True
     c['gateway']['controlUi']['dangerouslyDisableDeviceAuth'] = True
+    auth = c['gateway'].setdefault('auth', {})
+    mode = auth.get('mode')
+    if mode is None or mode == 'token':
+      auth['mode'] = 'token'
+      auth['token'] = os.environ.get('OPENCLAW_GATEWAY_TOKEN', auth.get('token'))
     with open(p, 'w') as f: json.dump(c, f, indent=2)
 except PermissionError:
     sys.exit(1)
 "; then
-      echo "==> Updated openclaw.json: controlUi allowInsecureAuth + dangerouslyDisableDeviceAuth = true"
+      echo "==> Updated openclaw.json: Control UI auth settings and gateway token (when token mode)"
     else
       echo "==> WARNING: Could not update openclaw.json (permission denied). On the server run: sudo chown -R \$(whoami): $OPENCLAW_CONFIG_DIR"
     fi

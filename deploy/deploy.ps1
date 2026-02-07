@@ -70,7 +70,13 @@ $TempScript = [System.IO.Path]::GetTempFileName()
 try {
   [System.IO.File]::WriteAllText($TempScript, $ScriptContent, [System.Text.UTF8Encoding]::new($false))
   scp -i $KeyPath -o StrictHostKeyChecking=accept-new $TempScript "${Target}:/tmp/openclaw-remote-setup.sh"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to upload remote-setup.sh to $Target (scp exit code: $LASTEXITCODE)."
+  }
   ssh -i $KeyPath -o StrictHostKeyChecking=accept-new $Target "${RemoteEnv}chmod +x /tmp/openclaw-remote-setup.sh && bash /tmp/openclaw-remote-setup.sh"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Remote setup failed on $Target (ssh exit code: $LASTEXITCODE)."
+  }
 } finally {
   Remove-Item -LiteralPath $TempScript -Force -ErrorAction SilentlyContinue
 }
@@ -79,7 +85,14 @@ Write-Host ""
 try {
   $CurrentToken = ssh -i $KeyPath -o StrictHostKeyChecking=accept-new $Target "grep '^OPENCLAW_GATEWAY_TOKEN=' ~/openclaw/.env | cut -d= -f2-"
   if ($CurrentToken) {
-    Write-Host "Gateway token: $($CurrentToken.Trim())" -ForegroundColor Green
+    $Token = $CurrentToken.Trim()
+    $GatewayPort = if ($env:OPENCLAW_GATEWAY_PORT) { $env:OPENCLAW_GATEWAY_PORT } else { "18789" }
+    Write-Host "Gateway token: $Token" -ForegroundColor Green
+    Write-Host "Tokenized dashboard URL (direct): http://$Server`:$GatewayPort/?token=$Token" -ForegroundColor Green
+    if ($env:OPENCLAW_TAILSCALE_HOST) {
+      Write-Host "Tokenized dashboard URL (Tailscale): https://$($env:OPENCLAW_TAILSCALE_HOST)/?token=$Token" -ForegroundColor Green
+    }
+    Write-Host "If using SSH tunnel: http://127.0.0.1:$GatewayPort/?token=$Token" -ForegroundColor Green
   }
 } catch {
   Write-Host "Could not fetch token with post-check; use token from remote output above." -ForegroundColor Yellow
