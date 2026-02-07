@@ -11,7 +11,7 @@ One place that describes the flow so you don’t have to guess.
    `deploy.ps1` loads `deploy/.env`, then **SSHs to your server** and runs **remote-setup.sh** there (the script is piped over SSH; env vars like `OPENCLAW_REPO`, `OPENCLAW_REPO_BRANCH` are passed in the same command).
 
 2. **On the server, remote-setup.sh**:
-   - **Clones** `OPENCLAW_REPO` into `~/openclaw` (or `OPENCLAW_DIR`). If `OPENCLAW_REPO_BRANCH` is set, it clones that branch (e.g. `deploy`). Default repo is `https://github.com/openclaw/openclaw.git`; no default branch (then it uses whatever `git pull` / clone gives).
+   - **Clones** `OPENCLAW_REPO` into `~/openclaw` (or `OPENCLAW_DIR`). If `OPENCLAW_REPO_BRANCH` is set, it clones that branch (for example `hotfix/ollama-toolcall-stream-fallback`).
    - **Patches the Dockerfile** in that clone (adds Python venv, git, ClawHub before `USER node`). Only if not already patched.
    - **Build or pull:**
      - If `OPENCLAW_REGISTRY_IMAGE` is set and **`OPENCLAW_REGISTRY_USER` is not set**: **pull only** — `docker pull $OPENCLAW_REGISTRY_IMAGE`, no build. Run the gateway from that image (Watchtower path).
@@ -28,57 +28,36 @@ One place that describes the flow so you don’t have to guess.
 
 ---
 
-## Deploy the models dropdown (exact steps)
+## Deploy a hotfix branch (exact steps)
 
-Your dropdown lives in **openclaw-src** (the full OpenClaw app clone). Deploy uses whatever repo/branch you point it at. So:
-
-### 1. Push openclaw-src to your fork
-
-From your machine, with **openclaw-src** containing the dropdown changes:
+### 1. Create/push a hotfix branch from the local source repo
 
 ```powershell
-cd openclaw-src
-git status   # confirm your dropdown files are committed
-git remote -v   # if you don’t have your fork yet: git remote add origin https://github.com/CreamyG31337/openclaw.git
-git push origin deploy
+cd ..\openclaw-upstream-fresh
+git fetch origin
+git checkout main
+git reset --hard origin/main
+git checkout -b hotfix/<name>
+# edit + test
+git push -u fork hotfix/<name>
 ```
 
-Use the branch name you actually use (e.g. `deploy` or `main`). If the branch doesn’t exist yet:
-
-```powershell
-git checkout -b deploy
-git push -u origin deploy
-```
-
-### 2. Point deploy at your fork
-
-In **deploy/.env** (or set env when you run the script), set:
+### 2. Point deploy at your fork branch
 
 ```env
-OPENCLAW_REPO=https://github.com/CreamyG31337/openclaw.git
-OPENCLAW_REPO_BRANCH=deploy
+OPENCLAW_REPO=https://github.com/<you>/openclaw.git
+OPENCLAW_REPO_BRANCH=hotfix/<name>
+OPENCLAW_LOCAL_REPO_DIR=..\openclaw-upstream-fresh
 ```
 
-(Use your real GitHub user and branch name.)  
-Also have `OPENCLAW_SERVER`, `OPENCLAW_DEPLOY_USER`, `OPENCLAW_KEY_PATH` set (see `.env.example`).
-
-### 3. Run deploy (build on server)
-
-From the **openclaw** repo (the one that contains the **deploy** folder):
+### 3. Deploy
 
 ```powershell
 cd deploy
 .\deploy.ps1
 ```
 
-Do **not** set `OPENCLAW_REGISTRY_IMAGE` without `OPENCLAW_REGISTRY_USER` if you want a build this time — that would be “pull only” and wouldn’t use your fork. So either:
-
-- Leave `OPENCLAW_REGISTRY_IMAGE` unset → server builds from the clone and runs `openclaw:local`, or  
-- Set both `OPENCLAW_REGISTRY_IMAGE` and `OPENCLAW_REGISTRY_USER` (and `OPENCLAW_REGISTRY_PASSWORD`) → server builds from the clone, pushes to the registry, then runs from that image.
-
-### 4. Verify
-
-Open the Control UI (e.g. `http://<server>:18789`), go to Chat. You should see the **session** dropdown and the **model** dropdown next to it.
+Do **not** set `OPENCLAW_REGISTRY_IMAGE` without credentials if you want to build from your branch (that mode is pull-only).
 
 ---
 
@@ -89,7 +68,7 @@ If you use **REGISTRY-AND-WATCHTOWER.md**:
 - **Build and push (this run):** set `OPENCLAW_REGISTRY_IMAGE`, `OPENCLAW_REGISTRY_USER`, `OPENCLAW_REGISTRY_PASSWORD` → deploy builds from your fork and pushes.
 - **Pull only (later runs or Watchtower):** set `OPENCLAW_REGISTRY_IMAGE` and **do not** set `OPENCLAW_REGISTRY_USER` → no build, just `docker pull` and run. That only gets the dropdown after you’ve done at least one “build and push” with your fork.
 
-The local UI build we did (`npm install` + `npm run build` in `openclaw-src/ui`) was only to confirm the code compiles. The image that deploy runs is built **on the server** from the cloned repo (your fork) inside Docker.
+Any local UI build you run is only a compile check. The image that deploy runs is built **on the server** from the cloned repo (your fork) inside Docker.
 
 ---
 
@@ -102,7 +81,7 @@ run-sync-and-deploy.cmd
 ```
 
 This runs `sync-clean-upstream-and-deploy.ps1` and handles:
-1. fetch/rebase of local `openclaw-clean` against `origin/main`
+1. fetch/rebase of local source repo (`OPENCLAW_LOCAL_REPO_DIR`) against `origin/main`
 2. branch push to your fork branch (`OPENCLAW_REPO_BRANCH`)
 3. deployment to your server via `deploy.ps1`
 
@@ -110,21 +89,21 @@ This runs `sync-clean-upstream-and-deploy.ps1` and handles:
 
 ```env
 OPENCLAW_REPO=https://github.com/<you>/openclaw.git
-OPENCLAW_REPO_BRANCH=deploy-clean
+OPENCLAW_REPO_BRANCH=hotfix/<name>
 ```
 
 Optional overrides:
-- `OPENCLAW_LOCAL_REPO_DIR` (default `..\openclaw-clean`)
+- `OPENCLAW_LOCAL_REPO_DIR` (recommended `..\openclaw-upstream-fresh`)
 - `OPENCLAW_FORK_REMOTE_NAME` (default `fork`)
 - `OPENCLAW_UPSTREAM_REMOTE_NAME` (default `origin`)
 - `OPENCLAW_UPSTREAM_BRANCH` (default `main`)
 
 ### Conflict handling
 
-If upstream introduces conflicts, the script will stop at rebase. Resolve conflicts in `openclaw-clean`, then continue:
+If upstream introduces conflicts, the script will stop at rebase. Resolve conflicts in your local source repo, then continue:
 
 ```powershell
-cd openclaw-clean
+cd ..\openclaw-upstream-fresh
 git rebase --continue
 ```
 

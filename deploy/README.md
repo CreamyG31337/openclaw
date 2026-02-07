@@ -23,14 +23,14 @@ run-sync-and-deploy.cmd
 ```
 
 This runs `sync-clean-upstream-and-deploy.ps1`, which:
-1. Syncs `openclaw-clean` (or `OPENCLAW_LOCAL_REPO_DIR`) with upstream `origin/main`
+1. Syncs your local source repo (`OPENCLAW_LOCAL_REPO_DIR`, now `..\openclaw-upstream-fresh`) with upstream `origin/main`
 2. Rebases your deploy branch (`OPENCLAW_REPO_BRANCH`) onto upstream
 3. Pushes that branch to your fork (`OPENCLAW_REPO`)
 4. Runs `deploy.ps1`
 
 Required in `deploy/.env` for this flow:
 - `OPENCLAW_REPO=https://github.com/<you>/openclaw.git`
-- `OPENCLAW_REPO_BRANCH=deploy-clean` (or your branch name)
+- `OPENCLAW_REPO_BRANCH=hotfix/<name>` (or your branch name)
 
 ## Before you deploy (quick checks)
 
@@ -265,7 +265,7 @@ The patch is applied automatically when you run `.\deploy.ps1` (before `docker b
 | File | Purpose |
 |------|--------|
 | `run-sync-and-deploy.cmd` | One-click launcher for upstream sync + push + deploy |
-| `sync-clean-upstream-and-deploy.ps1` | Automates local `openclaw-clean` rebase/push workflow, then runs `deploy.ps1` |
+| `sync-clean-upstream-and-deploy.ps1` | Automates local repo rebase/push workflow (uses `OPENCLAW_LOCAL_REPO_DIR`), then runs `deploy.ps1` |
 | `deploy.ps1` | Runs from Windows: SSH + upload and run `remote-setup.sh` |
 | `dockerfile-venv-snippet.txt` | Snippet inserted into Dockerfile by `remote-setup.sh` (Python venv + ClawHub CLI; logic is in the script) |
 | `enable-agent-env-modify.ps1` | From Windows: upload and run `enable-agent-env-modify.py` on server, restart gateway |
