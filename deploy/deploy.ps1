@@ -61,6 +61,7 @@ if ($env:OPENCLAW_REGISTRY_USER) { $RemoteEnv += "export OPENCLAW_REGISTRY_USER=
 if ($env:OPENCLAW_REGISTRY_PASSWORD) { $RemoteEnv += "export OPENCLAW_REGISTRY_PASSWORD='$($env:OPENCLAW_REGISTRY_PASSWORD)'; " }
 if ($env:OPENCLAW_REPO) { $RemoteEnv += "export OPENCLAW_REPO='$($env:OPENCLAW_REPO)'; " }
 if ($env:OPENCLAW_REPO_BRANCH) { $RemoteEnv += "export OPENCLAW_REPO_BRANCH='$($env:OPENCLAW_REPO_BRANCH)'; " }
+if ($env:OPENCLAW_GATEWAY_TOKEN) { $RemoteEnv += "export OPENCLAW_GATEWAY_TOKEN='$($env:OPENCLAW_GATEWAY_TOKEN)'; " }
 if ($env:OPENAI_API_KEY) { $RemoteEnv += "export OPENAI_API_KEY='$($env:OPENAI_API_KEY)'; " }
 if ($env:OPENROUTER_API_KEY) { $RemoteEnv += "export OPENROUTER_API_KEY='$($env:OPENROUTER_API_KEY)'; " }
 # Copy script to server and run. Use a temp file + SCP so the remote file is LF-only (piping from PowerShell can re-introduce CRLF and cause $'\r': command not found).
@@ -75,4 +76,12 @@ try {
 }
 
 Write-Host ""
-Write-Host "Done. Check output above for gateway token and next steps." -ForegroundColor Green
+try {
+  $CurrentToken = ssh -i $KeyPath -o StrictHostKeyChecking=accept-new $Target "grep '^OPENCLAW_GATEWAY_TOKEN=' ~/openclaw/.env | cut -d= -f2-"
+  if ($CurrentToken) {
+    Write-Host "Gateway token: $($CurrentToken.Trim())" -ForegroundColor Green
+  }
+} catch {
+  Write-Host "Could not fetch token with post-check; use token from remote output above." -ForegroundColor Yellow
+}
+Write-Host "Done." -ForegroundColor Green

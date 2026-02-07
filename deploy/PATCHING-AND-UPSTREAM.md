@@ -1,130 +1,71 @@
 # Patching and Upstream Guide
 
-**Goal:** Maintain our custom features while pulling in upstream fixes.
+This file describes the update model we use now:
+- `openclaw-clean/` is the working source repo (close to upstream)
+- `deploy/.env` controls which fork+branch is deployed
+- `deploy/run-sync-and-deploy.cmd` is the normal update entry point
 
-> [!WARNING]
-> Expect **significant conflicts** every time. Our UI changes are invasive.
-> This guide documents the exact process that worked last time.
+## Standard update (no manual git)
 
----
+From `deploy/`, run:
 
-## The Process That Works
-
-We use a **rebase workflow on a separate branch** to keep history clean and make conflicts manageable.
-
-### Step 1: Create a Working Branch
-
-Don't touch `deploy` directly. Work on a throwaway branch.
-
-```powershell
-cd openclaw-src
-git fetch upstream
-git checkout deploy
-git checkout -b merge-upstream-updates
+```bat
+run-sync-and-deploy.cmd
 ```
 
-### Step 2: Rebase Onto Upstream
+That calls `sync-clean-upstream-and-deploy.ps1` and performs:
+1. fetch latest upstream (`origin/main`) in `openclaw-clean`
+2. checkout/rebase local deploy branch (`OPENCLAW_REPO_BRANCH`) onto upstream
+3. push that branch to your fork (`OPENCLAW_REPO`)
+4. run `deploy.ps1` to rebuild/restart gateway on server
 
-```powershell
-git rebase upstream/main
+## Required `deploy/.env` values
+
+```env
+OPENCLAW_REPO=https://github.com/<you>/openclaw.git
+OPENCLAW_REPO_BRANCH=deploy-clean
 ```
 
-**This WILL stop with conflicts.** That's expected.
+Recommended optional values:
 
-### Step 3: Fix Each Conflict (One Commit at a Time)
-
-Git will pause at each conflicting commit. For each one:
-
-1. **See what's broken:**
-   ```powershell
-   git status
-   ```
-
-2. **For files WE heavily modified** (see list below): Open in editor, keep our logic, integrate any new upstream stuff we want.
-
-3. **For files WE DON'T care about:** Just take theirs:
-   ```powershell
-   git checkout --theirs path/to/file
-   ```
-
-4. **Mark resolved and continue:**
-   ```powershell
-   git add .
-   git rebase --continue
-   ```
-
-5. **Repeat** until rebase completes.
-
-### Step 4: Build and Test
-
-```powershell
-cd ui
-npm run build
+```env
+OPENCLAW_LOCAL_REPO_DIR=..\openclaw-clean
+OPENCLAW_UPSTREAM_REMOTE_NAME=origin
+OPENCLAW_UPSTREAM_BRANCH=main
+OPENCLAW_FORK_REMOTE_NAME=fork
+OPENCLAW_AUTO_COMMIT_DIRTY=1
 ```
 
-If build fails, you missed something. Fix it, amend the commit.
+`OPENCLAW_AUTO_COMMIT_DIRTY=1` means local uncommitted/untracked changes are moved onto the deploy branch and auto-committed before rebase.
 
-### Step 5: Merge Into Deploy
+## Conflict handling
 
-Once rebase is clean and builds work:
+When upstream touches the same files as our patches, rebase can pause with conflicts.
+
+1. Open `openclaw-clean`, resolve conflicts in the listed files.
+2. Continue rebase:
 
 ```powershell
-git checkout deploy
-git merge merge-upstream-updates
-git push origin deploy
+cd openclaw-clean
+git add -A
+git rebase --continue
 ```
 
-### Step 6: Deploy
+3. After rebase succeeds, run `deploy/run-sync-and-deploy.cmd` again.
+
+## Recovery
+
+If you want to cancel the partial rebase:
 
 ```powershell
-cd ../deploy
-.\deploy.ps1
-```
-
----
-
-## Our Patch Files (The Conflict Zones)
-
-These are the files we've heavily modified. **Keep our logic in these:**
-
-### 🛑 Critical (We Rewrote These)
-| File | Our Change |
-|------|------------|
-| `ui/src/ui/app-render.helpers.ts` | **Session Panel** - entire `renderChatControls` function is ours |
-| `ui/src/ui/app-chat.ts` | Removed `activeMinutes` filter in `refreshChat()` |
-| `ui/src/ui/storage.ts` | Added `chatSessionsExpanded` setting |
-| `ui/src/ui/navigation.ts` | Changed Chat tab subtitle |
-| `ui/src/styles/chat/layout.css` | Session panel CSS, `overflow: visible` on content-header |
-| `ui/src/styles/layout.css` | `overflow: visible` on `.content-header` |
-
-### ⚠️ Medium (We Added To These)
-| File | Our Change |
-|------|------------|
-| `ui/src/ui/app-view-state.ts` | Added session panel state |
-| `ui/src/ui/controllers/models.ts` | Model dropdown logic |
-| `ui/src/ui/controllers/sessions.ts` | Session management |
-
----
-
-## If It All Goes Wrong
-
-Abort and start fresh:
-
-```powershell
+cd openclaw-clean
 git rebase --abort
-git checkout deploy
-git branch -D merge-upstream-updates
 ```
 
-Then try again, or ask for help.
+Then re-run `run-sync-and-deploy.cmd`.
 
----
+## Notes
 
-## Post-Merge Verification
-
-After deploying, check:
-- [ ] Session panel expands when clicked
-- [ ] Old sessions (>2 hours) are visible
-- [ ] New Session [+] button works
-- [ ] Dropdown not clipped (overflow issue)
-- [ ] Model selector works
+- Keep customizations in as few files as possible to reduce conflict frequency.
+- If you intentionally changed `OPENCLAW_REPO_BRANCH`, the sync script will target that branch.
+- `run-deploy.cmd` still exists for deploy-only runs (no upstream sync).

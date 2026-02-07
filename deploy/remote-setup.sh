@@ -47,8 +47,14 @@ else
 fi
 cd "$OPENCLAW_DIR"
 
-echo "==> Generating gateway token..."
-if [[ -f .env ]] && grep -q '^OPENCLAW_GATEWAY_TOKEN=' .env 2>/dev/null; then
+echo "==> Resolving gateway token..."
+OPENCLAW_TOKEN_FILE="$OPENCLAW_CONFIG_DIR/gateway-token"
+if [[ -n "${OPENCLAW_GATEWAY_TOKEN:-}" ]]; then
+  echo "==> Using OPENCLAW_GATEWAY_TOKEN from environment"
+elif [[ -f "$OPENCLAW_TOKEN_FILE" ]]; then
+  OPENCLAW_GATEWAY_TOKEN="$(cat "$OPENCLAW_TOKEN_FILE")"
+  echo "==> Reusing gateway token from $OPENCLAW_TOKEN_FILE"
+elif [[ -f .env ]] && grep -q '^OPENCLAW_GATEWAY_TOKEN=' .env 2>/dev/null; then
   OPENCLAW_GATEWAY_TOKEN="$(grep '^OPENCLAW_GATEWAY_TOKEN=' .env | cut -d= -f2-)"
   echo "==> Reusing existing gateway token from .env"
 else
@@ -57,7 +63,10 @@ else
   else
     OPENCLAW_GATEWAY_TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
   fi
+  echo "==> Generated new gateway token"
 fi
+printf '%s\n' "$OPENCLAW_GATEWAY_TOKEN" > "$OPENCLAW_TOKEN_FILE"
+chmod 600 "$OPENCLAW_TOKEN_FILE" 2>/dev/null || true
 
 echo "==> Writing .env..."
 export OPENCLAW_CONFIG_DIR OPENCLAW_WORKSPACE_DIR OPENCLAW_GATEWAY_PORT \

@@ -95,59 +95,39 @@ The local UI build we did (`npm install` + `npm run build` in `openclaw-src/ui`)
 
 ## When upstream (openclaw/openclaw) updates
 
-**Full guide (what we patch, how to merge without losing it):** [PATCHING-AND-UPSTREAM.md](PATCHING-AND-UPSTREAM.md).
+Use the one-click wrapper:
 
-Your fork (e.g. **CreamyG31337/openclaw** branch **deploy**) has the models dropdown and any other customizations. When upstream merges new changes, do this so you get fixes and new features and keep your dropdown.
-
-### 1. Check if you’re behind
-
-From **deploy** (this folder):
-
-```powershell
-.\check-upstream.ps1
+```bat
+run-sync-and-deploy.cmd
 ```
 
-That SSHs to the server, fetches `openclaw/openclaw` as `upstream`, and lists commits in `upstream/main` that are not in your current branch. If it says **"None. Your base is current"** you’re up to date; otherwise you’re behind and should merge (below).
+This runs `sync-clean-upstream-and-deploy.ps1` and handles:
+1. fetch/rebase of local `openclaw-clean` against `origin/main`
+2. branch push to your fork branch (`OPENCLAW_REPO_BRANCH`)
+3. deployment to your server via `deploy.ps1`
 
-(You can also run the same check locally: in **openclaw-src**, run `git fetch upstream` then `git log HEAD..upstream/main --oneline`.)
+### Required config in `deploy/.env`
 
-### 2. Merge upstream into your fork (openclaw-src)
-
-On your machine, in **openclaw-src** (your fork clone):
-
-```powershell
-cd openclaw-src
-git fetch upstream
-git checkout deploy
-git merge upstream/main
+```env
+OPENCLAW_REPO=https://github.com/<you>/openclaw.git
+OPENCLAW_REPO_BRANCH=deploy-clean
 ```
 
-- **No conflicts:** You’re done with this step. Go to step 3.
-- **Conflicts:** Git will list conflicted files (often `Dockerfile`, `docker-compose.yml`, or UI files like `ui/src/ui/app-render.helpers.ts`). Resolve them:
-  - Keep your dropdown changes where they conflict (e.g. in `app-render.helpers.ts`, `controllers/models.ts`, `controllers/sessions.ts`).
-  - Take upstream’s changes where you didn’t customize (e.g. new features in other files).
-  - If upstream added a models dropdown or changed the same UI, merge both: keep your behavior and integrate any upstream improvements (e.g. types, styling).
-  Then:
-  ```powershell
-  git add .
-  git commit -m "Merge upstream/main; keep models dropdown"
-  ```
+Optional overrides:
+- `OPENCLAW_LOCAL_REPO_DIR` (default `..\openclaw-clean`)
+- `OPENCLAW_FORK_REMOTE_NAME` (default `fork`)
+- `OPENCLAW_UPSTREAM_REMOTE_NAME` (default `origin`)
+- `OPENCLAW_UPSTREAM_BRANCH` (default `main`)
 
-### 3. Push your fork
+### Conflict handling
+
+If upstream introduces conflicts, the script will stop at rebase. Resolve conflicts in `openclaw-clean`, then continue:
 
 ```powershell
-git push origin deploy
+cd openclaw-clean
+git rebase --continue
 ```
 
-### 4. Redeploy so the server uses the updated fork
+Then re-run `run-sync-and-deploy.cmd`.
 
-From **deploy** (this repo):
-
-```powershell
-cd deploy
-.\deploy.ps1
-```
-
-That clones/pulls your fork (now with upstream merged), builds the image, and starts the gateway. If you use a registry and Watchtower: the push in step 3 doesn’t update the server by itself; you must run `.\deploy.ps1` once (build + push to registry) so the new image is available. After that, Watchtower can pull it, or you run `.\trigger-update.ps1` to pull and restart on the server.
-
-**Summary:** `check-upstream.ps1` → merge `upstream/main` into **openclaw-src** `deploy` → resolve conflicts (keep dropdown) → push → `.\deploy.ps1`.
+**Summary:** use `run-sync-and-deploy.cmd` for normal updates; only drop to manual git when a rebase conflict needs intervention.

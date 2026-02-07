@@ -1,8 +1,11 @@
 @echo off
 cd /d "%~dp0"
-:loop
 pwsh -NoProfile -ExecutionPolicy Bypass -File "%~dp0deploy.ps1"
 echo.
-echo Press any key to redeploy, or close this window to exit.
+if errorlevel 1 (
+  echo Deploy failed. Fix the error above, then re-run this file.
+) else (
+  echo Deploy completed successfully.
+)
+echo Press any key to close.
 pause >nul
-goto loop
