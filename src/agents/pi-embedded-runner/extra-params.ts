@@ -3,6 +3,7 @@ import type { SimpleStreamOptions } from "@mariozechner/pi-ai";
 import { streamSimple } from "@mariozechner/pi-ai";
 import type { OpenClawConfig } from "../../config/config.js";
 import { log } from "./logger.js";
+import { createOllamaAwareStreamFn } from "./ollama-stream.js";
 
 const OPENROUTER_APP_HEADERS: Record<string, string> = {
   "HTTP-Referer": "https://openclaw.ai",
@@ -130,6 +131,12 @@ export function applyExtraParamsToAgent(
   modelId: string,
   extraParamsOverride?: Record<string, unknown>,
 ): void {
+  agent.streamFn = createOllamaAwareStreamFn({
+    cfg,
+    provider,
+    baseStreamFn: agent.streamFn,
+  });
+
   const extraParams = resolveExtraParams({
     cfg,
     provider,

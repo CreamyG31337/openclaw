@@ -57,6 +57,7 @@ export const ModelProviderSchema = z
     api: ModelApiSchema.optional(),
     headers: z.record(z.string(), z.string()).optional(),
     authHeader: z.boolean().optional(),
+    streamToolCalls: z.boolean().optional(),
     models: z.array(ModelDefinitionSchema),
   })
   .strict();

@@ -558,6 +558,9 @@ async function buildHuggingfaceProvider(apiKey?: string): Promise<ProviderConfig
   return {
     baseUrl: HUGGINGFACE_BASE_URL,
     api: "openai-completions",
+    // Ollama often drops/garbles tool call deltas while streaming.
+    // Default to non-streaming for turns that include tools.
+    streamToolCalls: false,
     models,
   };
 }

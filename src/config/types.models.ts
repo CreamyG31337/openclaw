@@ -41,6 +41,7 @@ export type ModelProviderConfig = {
   api?: ModelApi;
   headers?: Record<string, string>;
   authHeader?: boolean;
+  streamToolCalls?: boolean;
   models: ModelDefinitionConfig[];
 };
 
