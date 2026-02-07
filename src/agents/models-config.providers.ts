@@ -399,6 +399,9 @@ async function buildOllamaProvider(): Promise<ProviderConfig> {
   return {
     baseUrl: OLLAMA_BASE_URL,
     api: "openai-completions",
+    // Ollama often drops/garbles tool call deltas while streaming.
+    // Default to non-streaming for turns that include tools.
+    streamToolCalls: false,
     models,
   };
 }
