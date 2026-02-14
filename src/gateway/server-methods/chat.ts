@@ -233,7 +233,28 @@ export const chatHandlers: GatewayRequestHandlers = {
     const max = Math.min(hardMax, requested);
     const sliced = rawMessages.length > max ? rawMessages.slice(-max) : rawMessages;
     const sanitized = stripEnvelopeFromMessages(sliced);
-    const capped = capArrayByJsonBytes(sanitized, getMaxChatHistoryMessagesBytes()).items;
+    // Safety net: truncate any individual content item that is large enough to
+    // freeze the browser renderer.  The full output is still on disk in the
+    // session JSONL; this only affects what we send over the WebSocket.
+    const MAX_CONTENT_ITEM_CHARS = 50_000;
+    const safeSanitized = sanitized.map((msg) => {
+      if (!msg || typeof msg !== "object") return msg;
+      const m = msg as Record<string, unknown>;
+      if (!Array.isArray(m.content)) return msg;
+      let changed = false;
+      const content = (m.content as Array<Record<string, unknown>>).map((item) => {
+        if (item?.type === "text" && typeof item.text === "string" && item.text.length > MAX_CONTENT_ITEM_CHARS) {
+          changed = true;
+          return {
+            ...item,
+            text: `${item.text.slice(0, MAX_CONTENT_ITEM_CHARS)}\n\n[… truncated for display – ${item.text.length.toLocaleString()} chars total]`,
+          };
+        }
+        return item;
+      });
+      return changed ? { ...m, content } : msg;
+    });
+    const capped = capArrayByJsonBytes(safeSanitized, getMaxChatHistoryMessagesBytes()).items;
     let thinkingLevel = entry?.thinkingLevel;
     if (!thinkingLevel) {
       const configured = cfg.agents?.defaults?.thinkingDefault;

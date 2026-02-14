@@ -920,11 +920,19 @@ export function createExecTool(
               reject(new Error(outcome.reason ?? "Command failed."));
               return;
             }
+            // Cap the text sent to the model/UI to avoid crashing browser renderers.
+            // The full output is still available in details.aggregated for debugging.
+            const MAX_TOOL_CONTENT_CHARS = 50_000;
+            const raw = outcome.aggregated || "(no output)";
+            const truncated =
+              raw.length > MAX_TOOL_CONTENT_CHARS
+                ? `${raw.slice(0, MAX_TOOL_CONTENT_CHARS)}\n\n[… truncated – ${raw.length.toLocaleString()} chars total, showing first ${MAX_TOOL_CONTENT_CHARS.toLocaleString()}]`
+                : raw;
             resolve({
               content: [
                 {
                   type: "text",
-                  text: `${getWarningText()}${outcome.aggregated || "(no output)"}`,
+                  text: `${getWarningText()}${truncated}`,
                 },
               ],
               details: {
