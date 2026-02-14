@@ -922,7 +922,7 @@ export function createExecTool(
             }
             // Cap the text sent to the model/UI to avoid crashing browser renderers.
             // The full output is still available in details.aggregated for debugging.
-            const MAX_TOOL_CONTENT_CHARS = 50_000;
+            const MAX_TOOL_CONTENT_CHARS = 20_000;
             const raw = outcome.aggregated || "(no output)";
             const truncated =
               raw.length > MAX_TOOL_CONTENT_CHARS

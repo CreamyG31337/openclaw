@@ -233,26 +233,45 @@ export const chatHandlers: GatewayRequestHandlers = {
     const max = Math.min(hardMax, requested);
     const sliced = rawMessages.length > max ? rawMessages.slice(-max) : rawMessages;
     const sanitized = stripEnvelopeFromMessages(sliced);
-    // Safety net: truncate any individual content item that is large enough to
-    // freeze the browser renderer.  The full output is still on disk in the
-    // session JSONL; this only affects what we send over the WebSocket.
-    const MAX_CONTENT_ITEM_CHARS = 50_000;
+    // Safety net: trim heavy fields before sending over the WebSocket so the
+    // browser renderer doesn't choke.  The full data is still on disk in the
+    // session JSONL; this only affects what we send to the UI.
+    const MAX_CONTENT_ITEM_CHARS = 20_000;
     const safeSanitized = sanitized.map((msg) => {
       if (!msg || typeof msg !== "object") return msg;
       const m = msg as Record<string, unknown>;
-      if (!Array.isArray(m.content)) return msg;
       let changed = false;
-      const content = (m.content as Array<Record<string, unknown>>).map((item) => {
-        if (item?.type === "text" && typeof item.text === "string" && item.text.length > MAX_CONTENT_ITEM_CHARS) {
+
+      // 1) Strip details.aggregated — full tool output dump the UI doesn't need.
+      if (m.details && typeof m.details === "object") {
+        const det = m.details as Record<string, unknown>;
+        if ("aggregated" in det) {
+          const { aggregated: _dropped, ...rest } = det;
+          m.details = Object.keys(rest).length > 0 ? rest : undefined;
           changed = true;
-          return {
-            ...item,
-            text: `${item.text.slice(0, MAX_CONTENT_ITEM_CHARS)}\n\n[… truncated for display – ${item.text.length.toLocaleString()} chars total]`,
-          };
         }
-        return item;
-      });
-      return changed ? { ...m, content } : msg;
+      }
+
+      // 2) Truncate individual content text items.
+      if (Array.isArray(m.content)) {
+        const content = (m.content as Array<Record<string, unknown>>).map((item) => {
+          if (
+            item?.type === "text" &&
+            typeof item.text === "string" &&
+            item.text.length > MAX_CONTENT_ITEM_CHARS
+          ) {
+            changed = true;
+            return {
+              ...item,
+              text: `${item.text.slice(0, MAX_CONTENT_ITEM_CHARS)}\n\n[… truncated for display – ${item.text.length.toLocaleString()} chars total]`,
+            };
+          }
+          return item;
+        });
+        if (changed) return { ...m, content };
+      }
+
+      return changed ? { ...m } : msg;
     });
     const capped = capArrayByJsonBytes(safeSanitized, getMaxChatHistoryMessagesBytes()).items;
     let thinkingLevel = entry?.thinkingLevel;
